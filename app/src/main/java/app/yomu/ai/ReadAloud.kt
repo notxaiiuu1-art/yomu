@@ -11,6 +11,7 @@ import app.yomu.Yomu
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -61,6 +62,9 @@ class ReadAloud(context: Context) {
 
     val usesFish: Boolean get() = Yomu.prefs.useFishAudio.get()
 
+    /** Last Fish Audio problem, shown in the reader so a fallback to the phone voice is never silent. */
+    val fishError = MutableStateFlow<String?>(null)
+
     /** Starts generating the audio for an upcoming line, so it plays without a gap. */
     fun prefetch(line: SpokenLine) {
         if (!usesFish) return
@@ -70,8 +74,19 @@ class ReadAloud(context: Context) {
     /** Speaks one line and returns when it has finished (or the coroutine is cancelled). */
     suspend fun speak(line: SpokenLine, language: String) {
         if (usesFish) {
-            val file = FishAudio.audio(line.text, FishAudio.voiceFor(line.speaker))
-            withContext(Dispatchers.Main) { play(file) }
+            val file = try {
+                FishAudio.audio(line.text, FishAudio.voiceFor(line.speaker)).also { fishError.value = null }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                fishError.value = (e.message ?: e.javaClass.simpleName) + " – lese mit Handy-Stimme"
+                null
+            }
+            if (file != null) {
+                withContext(Dispatchers.Main) { play(file) }
+            } else {
+                speakOnDevice(line, language)
+            }
         } else {
             speakOnDevice(line, language)
         }

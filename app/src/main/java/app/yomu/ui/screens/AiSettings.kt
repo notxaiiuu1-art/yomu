@@ -166,10 +166,9 @@ private fun FishAudioSettings() {
         trailingContent = { Switch(checked = enabled, onCheckedChange = { prefs.useFishAudio.set(it) }) },
         modifier = Modifier.clickable { prefs.useFishAudio.set(!enabled) },
     )
-    if (!enabled) return
-
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        PrefTextField("Fish-Audio-API-Key", prefs.fishKey, secret = true)
+        // Entering a key switches Fish Audio on, so it can't be forgotten.
+        PrefTextField("Fish-Audio-API-Key", prefs.fishKey, secret = true) { if (it.isNotBlank()) prefs.useFishAudio.set(true) }
         TextButton(onClick = { openExternal(context, "https://fish.audio") }) { Text("Key bei fish.audio holen") }
         PrefTextField("Modell (z. B. s2.1-pro oder s2.1-pro-free)", prefs.fishModel)
         Text("Stimmen-IDs", style = MaterialTheme.typography.titleSmall)
@@ -182,7 +181,12 @@ private fun FishAudioSettings() {
 }
 
 @Composable
-private fun PrefTextField(label: String, pref: Pref<String>, secret: Boolean = false) {
+private fun PrefTextField(
+    label: String,
+    pref: Pref<String>,
+    secret: Boolean = false,
+    onChanged: (String) -> Unit = {},
+) {
     val value by pref.flow.collectAsState()
     var text by remember { mutableStateOf(value) }
     OutlinedTextField(
@@ -190,6 +194,7 @@ private fun PrefTextField(label: String, pref: Pref<String>, secret: Boolean = f
         onValueChange = {
             text = it
             pref.set(it.trim())
+            onChanged(it.trim())
         },
         label = { Text(label) },
         singleLine = true,

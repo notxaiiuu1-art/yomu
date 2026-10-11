@@ -368,6 +368,7 @@ class ReaderScreen(
         val status = aiStatus
         val line = caption
         val showCaptions by Yomu.prefs.showCaptions.flow.collectAsState()
+        val fishError by Yomu.readAloud.fishError.collectAsState()
         Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (aiOn || status != null) {
                 Row(
@@ -380,11 +381,25 @@ class ReaderScreen(
                 ) {
                     if (aiOn && status != null) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                     Text(
-                        status ?: "🔊 Liest vor · tippen zum Stoppen",
+                        status ?: if (Yomu.readAloud.usesFish) {
+                            "🔊 Fish Audio · tippen zum Stoppen"
+                        } else {
+                            "🤖 Handy-Stimme · tippen zum Stoppen"
+                        },
                         color = Color.White,
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
+            }
+            if (aiOn && fishError != null) {
+                Text(
+                    "⚠ $fishError",
+                    color = Color(0xFFFFB4A9),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
             }
             if (line != null && showCaptions) {
                 val who = line.speaker.label
