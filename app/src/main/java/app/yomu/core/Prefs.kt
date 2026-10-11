@@ -133,6 +133,16 @@ class Prefs(context: Context) {
     val voiceNarrator = string("voice_narrator", "")
     val showCaptions = bool("ai_captions", true)
 
+    // Fish Audio: realistic cloud voices, one per speaker type
+    val useFishAudio = bool("use_fish_audio", false)
+    val fishKey = string("fish_key", "")
+    val fishModel = string("fish_model", "s2.1-pro")
+    val fishYoungWoman = string("fish_young_woman", "98655a12fa944e26b274c535e5e03842")
+    val fishWoman = string("fish_woman", "5233336f5f44460ea0902b0802375451")
+    val fishMan = string("fish_man", "a0bf667d447743f0858158cd250cca39")
+    val fishOldMan = string("fish_old_man", "e2d36ce651464956af0b66616e35b5cc")
+    val fishNarrator = string("fish_narrator", "a0bf667d447743f0858158cd250cca39")
+
     // Downloads
     val downloadOnlyWifi = bool("download_only_wifi", false)
     val deleteAfterRead = bool("delete_after_read", false)

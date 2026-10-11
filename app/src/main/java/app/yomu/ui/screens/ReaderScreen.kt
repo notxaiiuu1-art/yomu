@@ -319,9 +319,12 @@ class ReaderScreen(
             if (i < pages.lastIndex) scriptFor(i + 1)
             aiStatus = null
 
-            for (line in script.lines) {
+            script.lines.firstOrNull()?.let { Yomu.readAloud.prefetch(it) }
+            for ((n, line) in script.lines.withIndex()) {
                 if (!aiOn || current != i) break
                 caption = line
+                // Generate the next line's audio while this one plays, so there is no pause.
+                script.lines.getOrNull(n + 1)?.let { Yomu.readAloud.prefetch(it) }
                 // Webtoon: glide to the bubble that is being read.
                 if (isWebtoon && line.y >= 0f) pageCommands.emit(ScrollCommand(index, i, line.y))
                 Yomu.readAloud.speak(line, script.language.ifBlank { fallbackLang })
@@ -384,12 +387,7 @@ class ReaderScreen(
                 }
             }
             if (line != null && showCaptions) {
-                val who = when (line.speaker) {
-                    Speaker.FEMALE -> "👩"
-                    Speaker.MALE -> "👨"
-                    Speaker.CHILD -> "🧒"
-                    Speaker.NARRATOR -> "📖"
-                }
+                val who = line.speaker.label
                 Column(
                     Modifier
                         .fillMaxWidth()

@@ -95,6 +95,8 @@ fun AiSettingsSection() {
         Slider(value = rate, onValueChange = { prefs.ttsRate.set(it) }, valueRange = 0.6f..1.8f)
     }
 
+    FishAudioSettings()
+
     val language = if (translate) "de" else "en"
     var voices by remember(language) { mutableStateOf<List<Voice>>(emptyList()) }
     LaunchedEffect(language) { voices = Yomu.readAloud.voices(language) }
@@ -105,6 +107,11 @@ fun AiSettingsSection() {
             modifier = Modifier.padding(horizontal = 16.dp),
         )
     } else {
+        Text(
+            "Handy-Stimmen (werden benutzt, wenn Fish Audio aus ist)",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp),
+        )
         VoicePicker("Stimme für Frauen", prefs.voiceFemale, voices, language)
         VoicePicker("Stimme für Männer", prefs.voiceMale, voices, language)
         VoicePicker("Stimme für Erzähler", prefs.voiceNarrator, voices, language)
@@ -145,5 +152,64 @@ private fun VoicePicker(title: String, pref: Pref<String>, voices: List<Voice>, 
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FishAudioSettings() {
+    val prefs = Yomu.prefs
+    val context = LocalContext.current
+    val enabled by prefs.useFishAudio.flow.collectAsState()
+    ListItem(
+        headlineContent = { Text("Fish Audio benutzen") },
+        supportingContent = { Text("Echt klingende Stimmen aus der Cloud (braucht Fish-Audio-Key und Guthaben)") },
+        trailingContent = { Switch(checked = enabled, onCheckedChange = { prefs.useFishAudio.set(it) }) },
+        modifier = Modifier.clickable { prefs.useFishAudio.set(!enabled) },
+    )
+    if (!enabled) return
+
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PrefTextField("Fish-Audio-API-Key", prefs.fishKey, secret = true)
+        TextButton(onClick = { openExternal(context, "https://fish.audio") }) { Text("Key bei fish.audio holen") }
+        PrefTextField("Modell (z. B. s2.1-pro oder s2.1-pro-free)", prefs.fishModel)
+        Text("Stimmen-IDs", style = MaterialTheme.typography.titleSmall)
+        FishVoiceField("Junge Frau", prefs.fishYoungWoman)
+        FishVoiceField("Frau (älter)", prefs.fishWoman)
+        FishVoiceField("Mann", prefs.fishMan)
+        FishVoiceField("Älterer Mann", prefs.fishOldMan)
+        FishVoiceField("Erzähler", prefs.fishNarrator)
+    }
+}
+
+@Composable
+private fun PrefTextField(label: String, pref: Pref<String>, secret: Boolean = false) {
+    val value by pref.flow.collectAsState()
+    var text by remember { mutableStateOf(value) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = {
+            text = it
+            pref.set(it.trim())
+        },
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun FishVoiceField(label: String, pref: Pref<String>) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1f)) { PrefTextField(label, pref) }
+        OutlinedButton(onClick = {
+            scope.launch {
+                runCatching { Yomu.readAloud.previewFish(pref.get()) }.onFailure {
+                    android.widget.Toast.makeText(context, it.message ?: "Fehler", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }) { Text("▶") }
     }
 }
