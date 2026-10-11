@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
@@ -27,10 +29,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.yomu.Yomu
+import app.yomu.ui.CoverImage
 import app.yomu.ui.LocalNavigator
 import app.yomu.ui.NsfwChips
 import app.yomu.ui.langName
@@ -44,6 +48,10 @@ class BrowseTab {
     fun Content(@Suppress("UNUSED_PARAMETER") scope: CoroutineScope) {
         val nav = LocalNavigator.current
         val installed by Yomu.extensions.installed.collectAsState()
+        val catalog by Yomu.extensions.catalog.collectAsState()
+        // Each source shows its extension's icon from the repo listing.
+        val iconByPkg = catalog.associate { it.pkg to it.iconUrl }
+        val iconBySource = installed.flatMap { ext -> ext.sources.map { it.id to iconByPkg[ext.pkg] } }.toMap()
         val languages by Yomu.prefs.languages.flow.collectAsState()
         val nsfwFilter by Yomu.prefs.nsfwFilter.flow.collectAsState()
 
@@ -93,6 +101,13 @@ class BrowseTab {
                 LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
                     items(sources, key = { it.id }) { source ->
                         ListItem(
+                            leadingContent = {
+                                CoverImage(
+                                    iconBySource[source.id],
+                                    null,
+                                    Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)),
+                                )
+                            },
                             headlineContent = { Text(source.name) },
                             supportingContent = {
                                 Text(langName(source.lang), color = MaterialTheme.colorScheme.onSurfaceVariant)
