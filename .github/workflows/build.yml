@@ -1,0 +1,76 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        id: build
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --stacktrace --no-configuration-cache 2>&1 | tee build.log
+
+      - name: Collect APK
+        if: success()
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/yomu.apk
+          ls -la out
+
+      - name: Publish release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Yomu 1.0.${{ github.run_number }}
+          make_latest: true
+          files: out/yomu.apk
+          body: |
+            Auf dem Pixel öffnen, **yomu.apk** antippen und installieren.
+            Dauerhafter Link zur neuesten Version:
+            https://github.com/${{ github.repository }}/releases/latest/download/yomu.apk
+
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yomu-apk
+          path: out/yomu.apk
+
+      # Writes the build result to the `ci-logs` branch, so problems can be read with plain git.
+      - name: Save build log
+        if: always()
+        run: |
+          RESULT="${{ steps.build.outcome }}"
+          mkdir -p /tmp/ci && cd /tmp/ci
+          echo "$RESULT run=${{ github.run_number }} sha=${{ github.sha }}" > status.txt
+          if [ -f "$GITHUB_WORKSPACE/build.log" ]; then
+            cp "$GITHUB_WORKSPACE/build.log" build.log
+            grep -nE "^e: |error:|What went wrong|FAILURE|Could not|Unresolved|Exception" build.log | head -400 > errors.txt || true
+          fi
+          git init -q -b ci-logs
+          git -c user.name=ci -c user.email=ci@localhost add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "build ${{ github.run_number }}: $RESULT"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-logs

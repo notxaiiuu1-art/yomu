@@ -54,7 +54,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        isCoreLibraryDesugaringEnabled = true
     }
 
     buildFeatures {
@@ -96,31 +95,18 @@ kotlin {
 }
 
 dependencies {
-    coreLibraryDesugaring(libs.desugar)
-
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.foundation)
     implementation(libs.compose.animation)
     implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons.extended)
+    implementation(libs.compose.material.icons.core)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core)
-    implementation(libs.androidx.splashscreen)
-    implementation(libs.androidx.lifecycle.process)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.work)
-    implementation(libs.androidx.webkit)
-    implementation(libs.androidx.appcompat)
-
-    implementation(libs.coil.core)
-    implementation(libs.coil.compose)
-    implementation(libs.coil.gif)
 
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
