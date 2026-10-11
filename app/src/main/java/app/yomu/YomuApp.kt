@@ -2,6 +2,7 @@ package app.yomu
 
 import android.app.Application
 import android.content.Context
+import app.yomu.ai.ReadAloud
 import app.yomu.core.Library
 import app.yomu.core.Prefs
 import app.yomu.extension.ExtensionManager
@@ -30,6 +31,9 @@ object Yomu {
         private set
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Text-to-speech for the AI read-aloud mode; created on first use. */
+    val readAloud: ReadAloud by lazy { ReadAloud(app) }
 
     val json = Json {
         ignoreUnknownKeys = true

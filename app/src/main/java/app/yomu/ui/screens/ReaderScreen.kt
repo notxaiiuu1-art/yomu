@@ -3,6 +3,7 @@ package app.yomu.ui.screens
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -65,6 +67,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.yomu.Yomu
+import app.yomu.ai.Gemini
+import app.yomu.ai.PageScript
+import app.yomu.ai.Speaker
+import app.yomu.ai.SpokenLine
 import app.yomu.core.Images
 import app.yomu.core.ReaderMode
 import app.yomu.ui.LocalNavigator
@@ -75,7 +81,12 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -101,6 +112,16 @@ class ReaderScreen(
     private var initialPage = startPage
     private var preloadJob: Job? = null
     private var reloadKey by mutableIntStateOf(0)
+
+    // AI read-aloud
+    private var aiOn by mutableStateOf(false)
+    private var aiStatus by mutableStateOf<String?>(null)
+    private var caption by mutableStateOf<SpokenLine?>(null)
+    private var aiJob: Job? = null
+    private val scripts = HashMap<String, Deferred<PageScript>>()
+
+    /** Absolute page index the visible reader should scroll to (used by read-aloud). */
+    private val pageCommands = MutableSharedFlow<Int>(extraBufferCapacity = 4)
 
     private val chapter get() = chapters[index]
 
@@ -159,6 +180,149 @@ class ReaderScreen(
         Yomu.library.saveProgress(source.id, manga.url, chapter.url, chapter.name, page, finished)
     }
 
+    override fun onDispose() {
+        aiJob?.cancel()
+        Yomu.readAloud.stop()
+        super.onDispose()
+    }
+
+    // ---------------------------------------------------------------- AI read-aloud
+
+    private fun scriptKey(i: Int) = "${chapter.url}#$i"
+
+    private fun scriptFor(i: Int): Deferred<PageScript> {
+        val ch = chapter
+        val list = pages
+        val rtl = mode == ReaderMode.PAGED_RTL
+        return scripts.getOrPut(scriptKey(i)) {
+            scope.async(Dispatchers.IO) {
+                val file = Images.pageFile(source, ch.url, list[i])
+                Gemini.readPage(file, rtl)
+            }
+        }
+    }
+
+    private fun toggleAi() {
+        if (aiOn) {
+            stopAi()
+            return
+        }
+        if (Yomu.prefs.geminiKey.get().isBlank()) {
+            aiStatus = "Kein Gemini-Key. Trag ihn unter Einstellungen → KI-Vorlesen ein."
+            return
+        }
+        aiOn = true
+        menu = false
+        aiStatus = null
+        aiJob = scope.launch { runAi() }
+    }
+
+    private fun stopAi(message: String? = null) {
+        aiOn = false
+        aiJob?.cancel()
+        aiJob = null
+        Yomu.readAloud.stop()
+        caption = null
+        aiStatus = message
+    }
+
+    private suspend fun runAi() {
+        val fallbackLang = if (Yomu.prefs.aiTranslateGerman.get()) "de" else "en"
+        while (aiOn) {
+            if (loading) snapshotFlow { loading }.first { !it }
+            if (error != null || pages.isEmpty()) {
+                stopAi("Kapitel konnte nicht geladen werden.")
+                return
+            }
+            val i = current.coerceIn(0, pages.lastIndex)
+            aiStatus = "KI liest Seite ${i + 1} …"
+            val script = try {
+                scriptFor(i).await()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                scripts.remove(scriptKey(i))
+                stopAi(e.message ?: "KI-Fehler")
+                return
+            }
+            // Analyse the next page while this one is being read out.
+            if (i < pages.lastIndex) scriptFor(i + 1)
+            aiStatus = null
+
+            for (line in script.lines) {
+                if (!aiOn || current != i) break
+                caption = line
+                Yomu.readAloud.speak(line, script.language.ifBlank { fallbackLang })
+            }
+            caption = null
+            if (!aiOn) return
+            if (current != i) continue // the user turned the page: read that one instead
+
+            if (i >= pages.lastIndex) {
+                if (index < chapters.lastIndex) {
+                    goTo(index + 1)
+                } else {
+                    stopAi("Fertig – das war das neueste Kapitel.")
+                    return
+                }
+            } else {
+                pageCommands.emit(i + 1)
+                withTimeoutOrNull(4_000) { snapshotFlow { current }.first { it != i } }
+                if (current == i) {
+                    stopAi("Konnte nicht weiterblättern.")
+                    return
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun AiOverlay(modifier: Modifier = Modifier) {
+        val status = aiStatus
+        val line = caption
+        val showCaptions by Yomu.prefs.showCaptions.flow.collectAsState()
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (aiOn || status != null) {
+                Row(
+                    Modifier
+                        .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(20.dp))
+                        .clickable { if (aiOn) stopAi() else aiStatus = null }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (aiOn && status != null) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text(
+                        status ?: "🔊 Liest vor · tippen zum Stoppen",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+            if (line != null && showCaptions) {
+                val who = when (line.speaker) {
+                    Speaker.FEMALE -> "👩"
+                    Speaker.MALE -> "👨"
+                    Speaker.CHILD -> "🧒"
+                    Speaker.NARRATOR -> "📖"
+                }
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(14.dp))
+                        .padding(14.dp),
+                ) {
+                    Text(
+                        "$who ${line.name}".trim(),
+                        color = Color.LightGray,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Text(line.text, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
+
     private fun goTo(newIndex: Int) {
         if (newIndex !in chapters.indices) return
         index = newIndex
@@ -202,6 +366,15 @@ class ReaderScreen(
                 )
             }
 
+            if (aiOn || aiStatus != null || caption != null) {
+                AiOverlay(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 36.dp),
+                )
+            }
+
             if (menu) Menu(onBack = { nav.pop() })
         }
     }
@@ -218,6 +391,9 @@ class ReaderScreen(
 
         LaunchedEffect(state) {
             snapshotFlow { state.firstVisibleItemIndex }.distinctUntilChanged().collect { onPageChanged(it.coerceAtMost(list.lastIndex)) }
+        }
+        LaunchedEffect(Unit) {
+            pageCommands.collect { target -> state.animateScrollToItem(target.coerceIn(0, list.lastIndex)) }
         }
         LaunchedEffect(Unit) {
             MainActivity.volumeKeys.collect { dir ->
@@ -286,6 +462,9 @@ class ReaderScreen(
 
         LaunchedEffect(pager) {
             snapshotFlow { pager.currentPage }.distinctUntilChanged().collect { onPageChanged(it.coerceAtMost(list.lastIndex)) }
+        }
+        LaunchedEffect(Unit) {
+            pageCommands.collect { target -> pager.animateScrollToPage(target.coerceIn(0, total - 1)) }
         }
         LaunchedEffect(Unit) {
             MainActivity.volumeKeys.collect { dir -> pager.animateScrollToPage((pager.currentPage + dir).coerceIn(0, total - 1)) }
@@ -484,6 +663,9 @@ class ReaderScreen(
                         },
                         valueRange = 0f..pages.lastIndex.toFloat(),
                     )
+                }
+                Button(onClick = ::toggleAi, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Text(if (aiOn) "⏹ Vorlesen stoppen" else "🔊 KI-Vorlesen starten")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(

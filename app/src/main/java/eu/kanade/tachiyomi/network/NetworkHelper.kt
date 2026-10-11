@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.network
 
 import android.content.Context
 import android.webkit.WebSettings
+import app.yomu.core.DomainOverrideInterceptor
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UserAgentInterceptor
@@ -43,6 +44,7 @@ class NetworkHelper(private val context: Context) {
             // Keiyoushi extensions require these three, in this order, and add their own
             // compression handling (so no Brotli interceptor here).
             .addInterceptor(UncaughtExceptionInterceptor())
+            .addInterceptor(DomainOverrideInterceptor())
             .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
             .addInterceptor(CloudflareInterceptor(context, cookieJar, ::defaultUserAgentProvider))
 

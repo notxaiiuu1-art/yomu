@@ -69,6 +69,9 @@ class Prefs(context: Context) {
     private fun float(key: String, default: Float) =
         Pref(sp, key, default, { k, d -> getFloat(k, d) }, { k, v -> putFloat(k, v) })
 
+    private fun string(key: String, default: String) =
+        Pref(sp, key, default, { k, d -> getString(k, d) ?: d }, { k, v -> putString(k, v) })
+
     private fun strings(key: String, default: Set<String>) =
         Pref(sp, key, default, { k, d -> getStringSet(k, d)?.toSet() ?: d }, { k, v -> putStringSet(k, v) })
 
@@ -117,6 +120,18 @@ class Prefs(context: Context) {
     val lastUsedSource = Pref(sp, "last_source", 0L, { k, d -> getLong(k, d) }, { k, v -> putLong(k, v) })
     val repos = strings("repos", setOf(KEIYOUSHI_INDEX))
     val trustedSignatures = strings("trusted_signatures", emptySet())
+    /** Entries "oldhost|https://newhost" – lets a source keep working after its site moves. */
+    val domainOverrides = strings("domain_overrides", emptySet())
+
+    // AI read-aloud (Gemini reads the page, the phone's voices speak it)
+    val geminiKey = string("gemini_key", "")
+    val geminiModel = string("gemini_model", "gemini-3.8-flash")
+    val aiTranslateGerman = bool("ai_translate_de", true)
+    val ttsRate = float("tts_rate", 1.0f)
+    val voiceFemale = string("voice_female", "")
+    val voiceMale = string("voice_male", "")
+    val voiceNarrator = string("voice_narrator", "")
+    val showCaptions = bool("ai_captions", true)
 
     // Downloads
     val downloadOnlyWifi = bool("download_only_wifi", false)

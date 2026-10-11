@@ -144,7 +144,9 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
                         IconButton(onClick = ::refresh) { Icon(Icons.Filled.Refresh, "Aktualisieren") }
                         (source as? HttpSource)?.let { http ->
                             TextButton(onClick = {
-                                val url = runCatching { http.getMangaUrl(manga) }.getOrNull() ?: http.baseUrl
+                                val url = app.yomu.core.Domains.rewrite(
+                                    runCatching { http.getMangaUrl(manga) }.getOrNull() ?: http.baseUrl,
+                                )
                                 context.startActivity(WebViewActivity.intent(context, url))
                             }) { Text("Web") }
                         }

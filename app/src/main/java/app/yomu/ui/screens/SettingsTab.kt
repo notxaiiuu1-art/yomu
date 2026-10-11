@@ -71,6 +71,9 @@ fun SettingsTab() {
                 )
             }
 
+            Header("KI-Vorlesen (Gemini)")
+            AiSettingsSection()
+
             Header("Aussehen")
             val theme by prefs.themeMode.flow.collectAsState()
             FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

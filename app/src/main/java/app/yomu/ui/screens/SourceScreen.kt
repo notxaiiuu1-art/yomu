@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.yomu.Yomu
+import app.yomu.core.Domains
 import app.yomu.ui.ErrorBox
 import app.yomu.ui.LocalNavigator
 import app.yomu.ui.MangaCard
@@ -67,6 +68,7 @@ class SourceScreen(private val sourceId: Long) : Screen() {
     private var loading by mutableStateOf(false)
     private var error by mutableStateOf<String?>(null)
     private var job: Job? = null
+    private var showAddressDialog by mutableStateOf(false)
 
     init {
         Yomu.prefs.lastUsedSource.set(sourceId)
@@ -126,9 +128,10 @@ class SourceScreen(private val sourceId: Long) : Screen() {
                     },
                     actions = {
                         if (src is HttpSource) {
-                            TextButton(onClick = { context.startActivity(WebViewActivity.intent(context, src.baseUrl)) }) {
-                                Text("Web")
-                            }
+                            TextButton(onClick = { showAddressDialog = true }) { Text("Adresse") }
+                            TextButton(onClick = {
+                                context.startActivity(WebViewActivity.intent(context, Domains.rewrite(src.baseUrl)))
+                            }) { Text("Web") }
                         }
                     },
                 )
@@ -137,6 +140,12 @@ class SourceScreen(private val sourceId: Long) : Screen() {
             if (src == null) {
                 ErrorBox("Diese Quelle ist nicht installiert.", modifier = Modifier.padding(padding))
                 return@Scaffold
+            }
+            if (showAddressDialog && src is HttpSource) {
+                AddressDialog(src.baseUrl) { changed ->
+                    showAddressDialog = false
+                    if (changed) reset(listing)
+                }
             }
             Column(Modifier.fillMaxSize().padding(padding)) {
                 OutlinedTextField(
@@ -168,7 +177,7 @@ class SourceScreen(private val sourceId: Long) : Screen() {
                     ErrorBox(
                         error!!,
                         onRetry = { hasNext = true; loadMore() },
-                        webUrl = (src as? HttpSource)?.baseUrl,
+                        webUrl = (src as? HttpSource)?.baseUrl?.let(Domains::rewrite),
                     )
                     return@Column
                 }
@@ -215,4 +224,40 @@ class SourceScreen(private val sourceId: Long) : Screen() {
             }
         }
     }
+}
+
+/** Lets the user point a source at a new domain when its site has moved. */
+@Composable
+private fun AddressDialog(originalBaseUrl: String, onDone: (changed: Boolean) -> Unit) {
+    val current = Domains.overrideFor(originalBaseUrl)
+    var text by remember { mutableStateOf(current ?: "") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { onDone(false) },
+        title = { Text("Adresse der Quelle") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Original: $originalBaseUrl")
+                Text("Ist die Seite umgezogen? Trag hier die neue Adresse ein, z. B. neueseite.net. Leer lassen = Original benutzen.")
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    placeholder = { Text("neue-adresse.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                Domains.set(originalBaseUrl, text)
+                onDone(true)
+            }) { Text("Speichern") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                Domains.set(originalBaseUrl, null)
+                onDone(true)
+            }) { Text("Zurücksetzen") }
+        },
+    )
 }
