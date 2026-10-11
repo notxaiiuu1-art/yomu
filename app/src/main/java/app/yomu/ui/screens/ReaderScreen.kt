@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -121,8 +122,12 @@ class ReaderScreen(
     private var aiJob: Job? = null
     private val scripts = HashMap<String, Deferred<PageScript>>()
 
-    /** Absolute page index the visible reader should scroll to (used by read-aloud). */
-    private val pageCommands = MutableSharedFlow<Int>(extraBufferCapacity = 4)
+    /** Where read-aloud wants the reader to be: a page, and optionally a spot on it (0 = top, 1 = bottom). */
+    private data class ScrollCommand(val chapterIndex: Int, val pageIndex: Int, val y: Float = -1f)
+
+    private val pageCommands = MutableSharedFlow<ScrollCommand>(extraBufferCapacity = 8)
+
+    private val isWebtoon get() = mode == ReaderMode.WEBTOON || mode == ReaderMode.AUTO
 
     private val chapter get() = chapters[index]
 
@@ -307,6 +312,8 @@ class ReaderScreen(
             for (line in script.lines) {
                 if (!aiOn || current != i) break
                 caption = line
+                // Webtoon: glide to the bubble that is being read.
+                if (isWebtoon && line.y >= 0f) pageCommands.emit(ScrollCommand(index, i, line.y))
                 Yomu.readAloud.speak(line, script.language.ifBlank { fallbackLang })
             }
             caption = null
@@ -314,14 +321,26 @@ class ReaderScreen(
             if (current != i) continue // the user turned the page: read that one instead
 
             if (i >= pages.lastIndex) {
-                if (index < chapters.lastIndex) {
+                if (index < chapters.lastIndex && isWebtoon) {
+                    // Keep scrolling into the next chapter instead of reloading the reader.
+                    val next = index + 1
+                    appendNext()
+                    withTimeoutOrNull(30_000) {
+                        snapshotFlow { strip.any { it.chapterIndex == next } || appendError != null }.first { it }
+                    }
+                    if (strip.any { it.chapterIndex == next }) {
+                        pageCommands.emit(ScrollCommand(next, 0))
+                        withTimeoutOrNull(4_000) { snapshotFlow { index }.first { it == next } }
+                    }
+                    if (index != next) goTo(next)
+                } else if (index < chapters.lastIndex) {
                     goTo(index + 1)
                 } else {
                     stopAi("Fertig – das war das neueste Kapitel.")
                     return
                 }
             } else {
-                pageCommands.emit(i + 1)
+                pageCommands.emit(ScrollCommand(index, i + 1))
                 withTimeoutOrNull(4_000) { snapshotFlow { current }.first { it != i } }
                 if (current == i) {
                     stopAi("Konnte nicht weiterblättern.")
@@ -455,9 +474,25 @@ class ReaderScreen(
             }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) appendNext() }
         }
         LaunchedEffect(Unit) {
-            pageCommands.collect { target ->
-                val position = strip.indexOfFirst { it.chapterIndex == index && it.pageIndex == target }
-                if (position >= 0) state.animateScrollToItem(position)
+            pageCommands.collect { cmd ->
+                val position = strip.indexOfFirst { it.chapterIndex == cmd.chapterIndex && it.pageIndex == cmd.pageIndex }
+                if (position < 0) return@collect
+                if (cmd.y < 0f) {
+                    state.animateScrollToItem(position)
+                    return@collect
+                }
+                // Need the page's real height: bring it on screen once if it isn't yet.
+                var info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == position }
+                if (info == null) {
+                    state.scrollToItem(position)
+                    withFrameNanos { }
+                    info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == position }
+                }
+                val height = info?.size ?: return@collect
+                val viewport = state.layoutInfo.viewportSize.height
+                // Put the bubble about a third from the top of the screen.
+                val offset = (cmd.y * height - viewport * 0.33f).toInt().coerceIn(0, (height - 1).coerceAtLeast(0))
+                state.animateScrollToItem(position, offset)
             }
         }
         LaunchedEffect(Unit) {
@@ -559,7 +594,9 @@ class ReaderScreen(
             snapshotFlow { pager.currentPage }.distinctUntilChanged().collect { onPageChanged(it.coerceAtMost(list.lastIndex)) }
         }
         LaunchedEffect(Unit) {
-            pageCommands.collect { target -> pager.animateScrollToPage(target.coerceIn(0, total - 1)) }
+            pageCommands.collect { cmd ->
+                if (cmd.chapterIndex == index) pager.animateScrollToPage(cmd.pageIndex.coerceIn(0, total - 1))
+            }
         }
         LaunchedEffect(Unit) {
             MainActivity.volumeKeys.collect { dir -> pager.animateScrollToPage((pager.currentPage + dir).coerceIn(0, total - 1)) }

@@ -34,7 +34,13 @@ import java.util.concurrent.TimeUnit
 enum class Speaker { FEMALE, MALE, CHILD, NARRATOR }
 
 @Serializable
-data class SpokenLine(val speaker: Speaker, val name: String = "", val text: String)
+data class SpokenLine(
+    val speaker: Speaker,
+    val name: String = "",
+    val text: String,
+    /** Vertical centre of the bubble as a fraction of the page height (0 = top, 1 = bottom), or -1 if unknown. */
+    val y: Float = -1f,
+)
 
 @Serializable
 data class PageScript(val language: String = "", val lines: List<SpokenLine> = emptyList())
@@ -66,7 +72,7 @@ object Gemini {
         val model = prefs.geminiModel.get().trim().ifEmpty { "gemini-3.8-flash" }
         val translate = prefs.aiTranslateGerman.get()
 
-        val cacheFile = File(cacheDir, md5("${image.name}|${image.length()}|$model|$translate|$rightToLeft") + ".json")
+        val cacheFile = File(cacheDir, md5("v2|${image.name}|${image.length()}|$model|$translate|$rightToLeft") + ".json")
         if (cacheFile.exists()) {
             runCatching { return@withContext json.decodeFromString<PageScript>(cacheFile.readText()) }
         }
@@ -151,7 +157,8 @@ object Gemini {
             append("Keep the original language and wording. ")
         }
         append("Reply ONLY with JSON: {\"language\":\"<ISO 639-1 code of the text you output>\",")
-        append("\"lines\":[{\"speaker\":\"female|male|child|narrator\",\"name\":\"<character name or empty>\",\"text\":\"...\"}]}. ")
+        append("\"lines\":[{\"speaker\":\"female|male|child|narrator\",\"name\":\"<character name or empty>\",")
+        append("\"y\":<vertical centre of the bubble as a fraction of the WHOLE page height, 0.0 = top, 1.0 = bottom>,\"text\":\"...\"}]}. ")
         append("If the page has no readable text, reply {\"language\":\"\",\"lines\":[]}.")
     }
 
@@ -170,7 +177,8 @@ object Gemini {
                 "child", "kid" -> Speaker.CHILD
                 else -> Speaker.NARRATOR
             }
-            SpokenLine(speaker, o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(), line)
+            val y = o["y"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull()?.takeIf { it in 0f..1f } ?: -1f
+            SpokenLine(speaker, o["name"]?.jsonPrimitive?.contentOrNull.orEmpty(), line, y)
         }
         return PageScript(obj?.get("language")?.jsonPrimitive?.contentOrNull.orEmpty(), lines)
     }
