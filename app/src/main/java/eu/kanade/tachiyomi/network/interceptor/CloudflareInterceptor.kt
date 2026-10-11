@@ -49,7 +49,7 @@ class CloudflareInterceptor(
         if (response.code != 403 && response.code != 503 && response.code != 429) return false
         if (response.header("cf-mitigated") == "challenge") return true
         return response.header("Server").orEmpty().startsWith("cloudflare", ignoreCase = true) &&
-            response.peekBody(64 * 1024).string().let {
+            response.peekBody(65_536L).string().let {
                 "challenge-platform" in it || "cf-browser-verification" in it || "Just a moment" in it
             }
     }

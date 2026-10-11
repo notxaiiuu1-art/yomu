@@ -75,7 +75,7 @@ abstract class HttpSource : CatalogueSource {
     // ---- search ----
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> =
-        Observable.defer { client.newCall(searchMangaRequest(page, query, filters)).asObservableSuccess() }
+        Observable.defer<Response> { client.newCall(searchMangaRequest(page, query, filters)).asObservableSuccess() }
             .map { searchMangaParse(it) }
 
     protected open fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request =

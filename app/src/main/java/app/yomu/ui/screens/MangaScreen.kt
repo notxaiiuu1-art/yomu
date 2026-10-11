@@ -240,7 +240,7 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
                             ErrorBox(error!!, onRetry = ::refresh, webUrl = (source as? HttpSource)?.baseUrl)
                         }
                     }
-                    else -> items(chapters, key = { it.url }) { chapter ->
+                    else -> items(chapters) { chapter ->
                         val read = chapter.url in readSet
                         val current = chapter.url == progress?.lastChapterUrl
                         ListItem(

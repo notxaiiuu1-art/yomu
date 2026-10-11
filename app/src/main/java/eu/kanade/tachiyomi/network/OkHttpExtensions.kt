@@ -27,7 +27,7 @@ import kotlin.coroutines.resumeWithException
 val jsonMime: MediaType = "application/json; charset=utf-8".toMediaType()
 
 /** RxJava 1 wrapper used by lib-1.4 sources. Executes lazily and cancels on unsubscribe. */
-fun Call.asObservable(): Observable<Response> = Observable.unsafeCreate { subscriber ->
+fun Call.asObservable(): Observable<Response> = Observable.unsafeCreate<Response> { subscriber ->
     val call = clone()
     val requested = AtomicBoolean(false)
     val producer = object : Producer, Subscription {

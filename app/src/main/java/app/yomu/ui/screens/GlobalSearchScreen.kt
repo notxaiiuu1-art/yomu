@@ -126,7 +126,7 @@ class GlobalSearchScreen(private val query: String, sourceIds: List<Long>) : Scr
                                     contentPadding = PaddingValues(horizontal = 16.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {
-                                    items(result.mangas, key = { it.url }) { manga ->
+                                    items(result.mangas) { manga ->
                                         Column(Modifier.width(120.dp)) {
                                             MangaCard(manga.title, manga.thumbnail_url, source) {
                                                 nav.push(MangaScreen(source.id, manga))

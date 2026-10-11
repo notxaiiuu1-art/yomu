@@ -9,7 +9,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -230,8 +229,9 @@ class ReaderScreen(
             Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, gestureZoom, _ ->
-                        zoom = (zoom * gestureZoom).coerceIn(1f, 3f)
+                    // Two-finger pinch only, so one-finger scrolling stays with the list.
+                    awaitEachGestureZoom(isZoomed = { false }) { pan, factor ->
+                        zoom = (zoom * factor).coerceIn(1f, 3f)
                         val maxPan = (size.width * (zoom - 1f)) / 2f
                         panX = (panX + pan.x).coerceIn(-maxPan, maxPan)
                         if (zoom == 1f) panX = 0f

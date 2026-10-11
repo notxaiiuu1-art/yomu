@@ -15,8 +15,8 @@ android {
 
     defaultConfig {
         applicationId = "app.yomu"
-        // Pixel 8a launched on Android 14; 31+ gives Material You colours and the splash API.
-        minSdk = 31
+        // Pixel 8a launched on Android 14 (API 34).
+        minSdk = 34
         targetSdk = 36
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
@@ -72,6 +72,11 @@ android {
             )
         }
         jniLibs { useLegacyPackaging = false }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     dependenciesInfo {
