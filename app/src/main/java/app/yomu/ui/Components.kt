@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -121,6 +122,21 @@ fun ErrorBox(message: String, onRetry: (() -> Unit)? = null, webUrl: String? = n
             Button(onClick = { context.startActivity(WebViewActivity.intent(context, webUrl)) }) {
                 Text("Im Browser öffnen")
             }
+        }
+    }
+}
+
+/** "Ohne 18+ / Alle / Nur 18+" chips, shared by the source and extension lists. */
+@Composable
+fun NsfwChips(modifier: Modifier = Modifier) {
+    val current by app.yomu.Yomu.prefs.nsfwFilter.flow.collectAsState()
+    androidx.compose.foundation.layout.Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        app.yomu.core.NsfwFilter.entries.forEach { f ->
+            androidx.compose.material3.FilterChip(
+                selected = current == f,
+                onClick = { app.yomu.Yomu.prefs.nsfwFilter.set(f) },
+                label = { Text(f.label) },
+            )
         }
     }
 }

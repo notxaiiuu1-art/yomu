@@ -41,6 +41,7 @@ import app.yomu.Yomu
 import app.yomu.extension.CatalogEntry
 import app.yomu.extension.ContentWarning
 import app.yomu.ui.CoverImage
+import app.yomu.ui.NsfwChips
 import app.yomu.ui.langName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -58,11 +59,11 @@ class ExtensionsTab {
         val busy by Yomu.extensions.busy.collectAsState()
         val error by Yomu.extensions.catalogError.collectAsState()
         val languages by Yomu.prefs.languages.flow.collectAsState()
-        val showNsfw by Yomu.prefs.showNsfw.flow.collectAsState()
+        val nsfwFilter by Yomu.prefs.nsfwFilter.flow.collectAsState()
 
         val installedByPkg = installed.associateBy { it.pkg }
         val visible = catalog
-            .filter { showNsfw || it.contentWarning != ContentWarning.NSFW }
+            .filter { nsfwFilter.allows(it.contentWarning == ContentWarning.NSFW) }
             .filter { it.lang in languages || it.sources.any { s -> s.lang in languages } || languages.isEmpty() }
             .filter { filter.isBlank() || it.name.contains(filter, ignoreCase = true) }
             .filter { !onlyInstalled || it.pkg in installedByPkg }
@@ -105,12 +106,8 @@ class ExtensionsTab {
                         onClick = { onlyInstalled = !onlyInstalled },
                         label = { Text("Nur installierte (${installed.size})") },
                     )
-                    FilterChip(
-                        selected = showNsfw,
-                        onClick = { Yomu.prefs.showNsfw.set(!showNsfw) },
-                        label = { Text("18+ anzeigen") },
-                    )
                 }
+                NsfwChips(Modifier.padding(horizontal = 16.dp))
                 error?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
                 }

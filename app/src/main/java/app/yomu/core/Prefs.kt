@@ -17,6 +17,19 @@ enum class ReaderMode(val label: String) {
     PAGED_VERTICAL("Seiten vertikal"),
 }
 
+enum class NsfwFilter(val label: String) {
+    HIDE("Ohne 18+"),
+    SHOW("Alle"),
+    ONLY("Nur 18+"),
+    ;
+
+    fun allows(nsfw: Boolean) = when (this) {
+        HIDE -> !nsfw
+        SHOW -> true
+        ONLY -> nsfw
+    }
+}
+
 enum class LibrarySort(val label: String) {
     LAST_READ("Zuletzt gelesen"),
     UNREAD("Ungelesen"),
@@ -99,7 +112,7 @@ class Prefs(context: Context) {
 
     // Browse
     val languages = strings("languages", setOf("de", "en", "all"))
-    val showNsfw = bool("show_nsfw", false)
+    val nsfwFilter = enum("nsfw_filter", NsfwFilter.HIDE)
     val pinnedSources = strings("pinned_sources", emptySet())
     val lastUsedSource = Pref(sp, "last_source", 0L, { k, d -> getLong(k, d) }, { k, v -> putLong(k, v) })
     val repos = strings("repos", setOf(KEIYOUSHI_INDEX))

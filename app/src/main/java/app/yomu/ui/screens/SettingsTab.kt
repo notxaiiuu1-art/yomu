@@ -29,6 +29,7 @@ import app.yomu.core.Images
 import app.yomu.core.Pref
 import app.yomu.core.ReaderMode
 import app.yomu.core.ThemeMode
+import app.yomu.ui.NsfwChips
 import app.yomu.ui.langName
 
 private val LANGS = listOf("de", "en", "all", "ja", "ko", "zh", "es", "fr", "it", "pt-BR", "ru", "tr", "id", "vi")
@@ -103,7 +104,8 @@ fun SettingsTab() {
                     )
                 }
             }
-            Toggle("18+ Inhalte anzeigen", prefs.showNsfw)
+            Text("18+ Inhalte", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
+            NsfwChips(Modifier.padding(horizontal = 16.dp))
 
             Header("Speicher")
             ListItem(

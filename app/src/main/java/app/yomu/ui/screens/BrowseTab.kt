@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.yomu.Yomu
 import app.yomu.ui.LocalNavigator
+import app.yomu.ui.NsfwChips
 import app.yomu.ui.langName
 import kotlinx.coroutines.CoroutineScope
 
@@ -44,10 +45,10 @@ class BrowseTab {
         val nav = LocalNavigator.current
         val installed by Yomu.extensions.installed.collectAsState()
         val languages by Yomu.prefs.languages.flow.collectAsState()
-        val showNsfw by Yomu.prefs.showNsfw.flow.collectAsState()
+        val nsfwFilter by Yomu.prefs.nsfwFilter.flow.collectAsState()
 
         val sources = installed
-            .filter { showNsfw || !it.nsfw }
+            .filter { nsfwFilter.allows(it.nsfw) }
             .flatMap { it.sources }
             .filter { it.lang in languages || languages.isEmpty() }
             .sortedWith(compareBy({ it.lang }, { it.name.lowercase() }))
@@ -68,6 +69,8 @@ class BrowseTab {
                     ),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
+                // The global search uses exactly the sources shown here, so "Nur 18+" searches only those.
+                NsfwChips(Modifier.padding(horizontal = 16.dp))
 
                 if (sources.isEmpty()) {
                     Column(
@@ -79,7 +82,7 @@ class BrowseTab {
                             if (installed.isEmpty()) {
                                 "Noch keine Quellen.\nInstalliere unter „Erweiterungen“ zuerst eine Quelle."
                             } else {
-                                "Keine Quelle in deinen Sprachen.\nSprachen kannst du in den Einstellungen ändern."
+                                "Keine passende Quelle.\nPrüfe den 18+-Filter oben oder die Sprachen in den Einstellungen."
                             },
                             textAlign = TextAlign.Center,
                         )
