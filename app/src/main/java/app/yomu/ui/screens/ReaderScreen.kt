@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -125,6 +126,13 @@ class ReaderScreen(
 
     private val chapter get() = chapters[index]
 
+    // Webtoon mode reads chapters as one endless strip: the next chapter is appended below.
+    private class StripPage(val chapterIndex: Int, val pageIndex: Int, val page: Page)
+    private val strip = mutableStateListOf<StripPage>()
+    private val chapterPages = HashMap<Int, List<Page>>()
+    private var appending by mutableStateOf(false)
+    private var appendError by mutableStateOf<String?>(null)
+
     init {
         load()
     }
@@ -139,6 +147,11 @@ class ReaderScreen(
                 check(list.isNotEmpty()) { "Dieses Kapitel hat keine Seiten" }
                 pages = list
                 current = initialPage.coerceIn(0, list.lastIndex)
+                chapterPages.clear()
+                chapterPages[index] = list
+                strip.clear()
+                strip.addAll(list.mapIndexed { i, page -> StripPage(index, i, page) })
+                appendError = null
                 if (mode == ReaderMode.AUTO) mode = guessMode(list)
                 preload(current)
             } catch (e: Throwable) {
@@ -170,6 +183,48 @@ class ReaderScreen(
                 runCatching { Images.pageFile(source, chapter.url, list[i]) }
             }
         }
+    }
+
+    /** Loads the chapter after the last one in the strip and appends its pages. */
+    private fun appendNext() {
+        val last = strip.lastOrNull()?.chapterIndex ?: return
+        val next = last + 1
+        if (appending || next > chapters.lastIndex || chapterPages.containsKey(next)) return
+        appending = true
+        appendError = null
+        scope.launch {
+            try {
+                val nextChapter = chapters[next]
+                val list = withContext(Dispatchers.IO) { source.getPageList(nextChapter) }
+                if (list.isNotEmpty()) {
+                    chapterPages[next] = list
+                    strip.addAll(list.mapIndexed { i, page -> StripPage(next, i, page) })
+                    launch {
+                        list.take(3).forEach { runCatching { Images.pageFile(source, nextChapter.url, it) } }
+                    }
+                }
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                appendError = e.message ?: e.javaClass.simpleName
+            } finally {
+                appending = false
+            }
+        }
+    }
+
+    /** Called with the first visible strip position; switches chapter when the reader crosses into the next one. */
+    private fun onStripVisible(position: Int) {
+        if (strip.isEmpty()) return
+        val item = strip[position.coerceIn(0, strip.lastIndex)]
+        if (item.chapterIndex != index) {
+            // Crossing a chapter border: the previous chapter counts as read.
+            if (item.chapterIndex > index) {
+                Yomu.library.saveProgress(source.id, manga.url, chapter.url, chapter.name, pages.lastIndex, true)
+            }
+            index = item.chapterIndex
+            pages = chapterPages[index].orEmpty()
+        }
+        onPageChanged(item.pageIndex)
     }
 
     private fun onPageChanged(page: Int) {
@@ -344,7 +399,8 @@ class ReaderScreen(
                     Text(error!!, color = Color.White)
                     Button(onClick = ::load) { Text("Erneut versuchen") }
                 }
-                else -> key(index, mode, reloadKey) {
+                // Webtoon keeps one strip across chapters, so it must not be rebuilt on chapter change.
+                else -> key(if (mode == ReaderMode.PAGED_RTL || mode == ReaderMode.PAGED_LTR || mode == ReaderMode.PAGED_VERTICAL) index else -1, mode, reloadKey) {
                     when (mode) {
                         ReaderMode.WEBTOON, ReaderMode.AUTO -> Webtoon()
                         else -> Paged()
@@ -383,17 +439,26 @@ class ReaderScreen(
 
     @Composable
     private fun Webtoon() {
-        val list = pages
-        val state = rememberLazyListState(initialFirstVisibleItemIndex = current.coerceIn(0, list.lastIndex))
+        val state = rememberLazyListState(initialFirstVisibleItemIndex = current.coerceIn(0, (strip.size - 1).coerceAtLeast(0)))
         val scope = rememberCoroutineScope()
         var zoom by remember { mutableFloatStateOf(1f) }
         var panX by remember { mutableFloatStateOf(0f) }
 
         LaunchedEffect(state) {
-            snapshotFlow { state.firstVisibleItemIndex }.distinctUntilChanged().collect { onPageChanged(it.coerceAtMost(list.lastIndex)) }
+            snapshotFlow { state.firstVisibleItemIndex }.distinctUntilChanged().collect { onStripVisible(it) }
+        }
+        // Start loading the next chapter a few pages before the end, so it is simply there.
+        LaunchedEffect(state) {
+            snapshotFlow {
+                val info = state.layoutInfo
+                (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4
+            }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) appendNext() }
         }
         LaunchedEffect(Unit) {
-            pageCommands.collect { target -> state.animateScrollToItem(target.coerceIn(0, list.lastIndex)) }
+            pageCommands.collect { target ->
+                val position = strip.indexOfFirst { it.chapterIndex == index && it.pageIndex == target }
+                if (position >= 0) state.animateScrollToItem(position)
+            }
         }
         LaunchedEffect(Unit) {
             MainActivity.volumeKeys.collect { dir ->
@@ -441,10 +506,40 @@ class ReaderScreen(
                         translationX = panX
                     },
             ) {
-                itemsIndexed(list, key = { i, _ -> "${chapter.url}#$i" }) { _, page ->
-                    PageImage(page, widthPx, fit = false)
+                items(strip.size, key = { pos -> strip[pos].let { "${it.chapterIndex}#${it.pageIndex}" } }) { pos ->
+                    val item = strip[pos]
+                    val itemChapter = chapters[item.chapterIndex]
+                    Column {
+                        if (item.pageIndex == 0 && pos > 0) {
+                            Text(
+                                "— ${itemChapter.name} —",
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.labelLarge,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                            )
+                        }
+                        PageImage(item.page, widthPx, fit = false, chapterUrl = itemChapter.url)
+                    }
                 }
-                item { ChapterEnd() }
+                item {
+                    val lastInStrip = strip.lastOrNull()?.chapterIndex ?: index
+                    when {
+                        appending -> Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                        appendError != null -> Column(
+                            Modifier.fillMaxWidth().padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text("Nächstes Kapitel: ${appendError}", color = Color.White)
+                            Button(onClick = ::appendNext) { Text("Nochmal") }
+                        }
+                        lastInStrip >= chapters.lastIndex -> ChapterEnd()
+                        else -> Box(Modifier.fillMaxWidth().height(200.dp))
+                    }
+                }
             }
         }
     }
@@ -553,15 +648,15 @@ class ReaderScreen(
     // ---------------------------------------------------------------- shared
 
     @Composable
-    private fun PageImage(page: Page, widthPx: Int, fit: Boolean) {
+    private fun PageImage(page: Page, widthPx: Int, fit: Boolean, chapterUrl: String = chapter.url) {
         var bitmap by remember(page) { mutableStateOf<Bitmap?>(null) }
         var failed by remember(page) { mutableStateOf<String?>(null) }
         var attempt by remember(page) { mutableIntStateOf(0) }
 
-        LaunchedEffect(page, attempt) {
+        LaunchedEffect(page, attempt, chapterUrl) {
             failed = null
             try {
-                val file: File = Images.pageFile(source, chapter.url, page)
+                val file: File = Images.pageFile(source, chapterUrl, page)
                 bitmap = Images.pageBitmap(file, widthPx) ?: error("Bild kann nicht gelesen werden")
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
