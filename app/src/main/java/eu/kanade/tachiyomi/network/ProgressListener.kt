@@ -13,14 +13,14 @@ interface ProgressListener {
 }
 
 class ProgressResponseBody(
-    private val delegate: ResponseBody,
+    private val body: ResponseBody,
     private val listener: ProgressListener,
 ) : ResponseBody() {
 
-    private val tracked: BufferedSource by lazy { track(delegate.source()).buffer() }
+    private val tracked: BufferedSource by lazy { track(body.source()).buffer() }
 
-    override fun contentType(): MediaType? = delegate.contentType()
-    override fun contentLength(): Long = delegate.contentLength()
+    override fun contentType(): MediaType? = body.contentType()
+    override fun contentLength(): Long = body.contentLength()
     override fun source(): BufferedSource = tracked
 
     private fun track(source: Source): Source = object : ForwardingSource(source) {
@@ -28,7 +28,7 @@ class ProgressResponseBody(
         override fun read(sink: Buffer, byteCount: Long): Long {
             val read = super.read(sink, byteCount)
             if (read != -1L) total += read
-            listener.update(total, delegate.contentLength(), read == -1L)
+            listener.update(total, body.contentLength(), read == -1L)
             return read
         }
     }

@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
                     val current = navigator.current
                     BackHandler(enabled = navigator.stack.size > 1) { navigator.pop() }
 
-                    LaunchedEffect(current) { setImmersive(current.immersive) }
+                    LaunchedEffect(current) { applyImmersive(current.immersive) }
 
                     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                         val depth = remember { IntArray(1) }
@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
         window.attributes = window.attributes.also { it.preferredDisplayModeId = best.modeId }
     }
 
-    private fun setImmersive(on: Boolean) {
+    private fun applyImmersive(on: Boolean) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         if (on) {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
