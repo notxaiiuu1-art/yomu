@@ -248,18 +248,28 @@ class ReaderScreen(
 
     // ---------------------------------------------------------------- AI read-aloud
 
-    private fun scriptKey(i: Int) = "${chapter.url}#$i"
+    private fun scriptKey(i: Int) = scriptKeyFor(chapter, i)
 
+    private fun scriptKeyFor(ch: SChapter, i: Int) = "${ch.url}#$i"
+
+    /**
+     * Script for page [i]. Missing pages are requested in batches of up to six, so a chapter
+     * costs only a few Gemini requests (the free tier allows very few per day).
+     */
     private fun scriptFor(i: Int): Deferred<PageScript> {
+        scripts[scriptKey(i)]?.let { return it }
         val ch = chapter
         val list = pages
         val rtl = mode == ReaderMode.PAGED_RTL
-        return scripts.getOrPut(scriptKey(i)) {
-            scope.async(Dispatchers.IO) {
-                val file = Images.pageFile(source, ch.url, list[i])
-                Gemini.readPage(file, rtl)
-            }
+        val batch = (i..minOf(i + 5, list.lastIndex)).filter { scripts[scriptKeyFor(ch, it)] == null }
+        val request = scope.async(Dispatchers.IO) {
+            val files = batch.map { Images.pageFile(source, ch.url, list[it]) }
+            Gemini.readPages(files, rtl)
         }
+        batch.forEachIndexed { n, page ->
+            scripts[scriptKeyFor(ch, page)] = scope.async { request.await()[n] }
+        }
+        return scripts.getValue(scriptKey(i))
     }
 
     private fun toggleAi() {
@@ -301,7 +311,7 @@ class ReaderScreen(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                scripts.remove(scriptKey(i))
+                scripts.clear()
                 stopAi(e.message ?: "KI-Fehler")
                 return
             }
