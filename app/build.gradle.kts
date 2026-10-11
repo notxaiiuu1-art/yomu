@@ -11,7 +11,10 @@ val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 android {
     namespace = "app.yomu"
-    compileSdk = 36
+    // Compose BOM 2026.10 needs the Android 17 (API 37.2) SDK to compile against.
+    compileSdk {
+        version = release(37) { minorApiLevel = 2 }
+    }
 
     defaultConfig {
         applicationId = "app.yomu"
