@@ -105,6 +105,11 @@ class ExtensionsTab {
                         onClick = { onlyInstalled = !onlyInstalled },
                         label = { Text("Nur installierte (${installed.size})") },
                     )
+                    FilterChip(
+                        selected = showNsfw,
+                        onClick = { Yomu.prefs.showNsfw.set(!showNsfw) },
+                        label = { Text("18+ anzeigen") },
+                    )
                 }
                 error?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
