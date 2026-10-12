@@ -1,12 +1,15 @@
 package app.yomu.ui.screens
 
 import android.speech.tts.Voice
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ListItem
@@ -29,8 +32,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.yomu.Yomu
+import app.yomu.ai.FishSearchResult
+import app.yomu.ai.FishVoices
 import app.yomu.core.Pref
 import app.yomu.ui.openExternal
 import kotlinx.coroutines.launch
@@ -174,9 +180,16 @@ private fun FishAudioSettings() {
         Text("Stimmen-IDs", style = MaterialTheme.typography.titleSmall)
         FishVoiceField("Junge Frau", prefs.fishYoungWoman)
         FishVoiceField("Frau (älter)", prefs.fishWoman)
+        FishVoiceField("Junger Mann", prefs.fishYoungMan)
         FishVoiceField("Mann", prefs.fishMan)
         FishVoiceField("Älterer Mann", prefs.fishOldMan)
         FishVoiceField("Erzähler", prefs.fishNarrator)
+        Text(
+            "Du kannst hier eine ID oder einfach den Link von fish.audio einfügen. Mit ☰ nimmst du eine deiner gespeicherten Stimmen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        MyFishVoices()
     }
 }
 
@@ -189,6 +202,7 @@ private fun PrefTextField(
 ) {
     val value by pref.flow.collectAsState()
     var text by remember { mutableStateOf(value) }
+    LaunchedEffect(value) { if (value != text.trim()) text = value }
     OutlinedTextField(
         value = text,
         onValueChange = {
@@ -205,16 +219,170 @@ private fun PrefTextField(
 
 @Composable
 private fun FishVoiceField(label: String, pref: Pref<String>) {
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.weight(1f)) { PrefTextField(label, pref) }
-        OutlinedButton(onClick = {
-            scope.launch {
-                runCatching { Yomu.readAloud.previewFish(pref.get()) }.onFailure {
-                    android.widget.Toast.makeText(context, it.message ?: "Fehler", android.widget.Toast.LENGTH_LONG).show()
+    val saved by FishVoices.all.collectAsState()
+    val current by pref.flow.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    val savedName = FishVoices.parseId(current)?.let { id -> saved.firstOrNull { it.id == id }?.name }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.weight(1f)) {
+            PrefTextField(if (savedName != null) "$label · $savedName" else label, pref)
+        }
+        if (saved.isNotEmpty()) {
+            Box {
+                TextButton(onClick = { open = true }) { Text("☰") }
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    saved.forEach { voice ->
+                        DropdownMenuItem(text = { Text(voice.name) }, onClick = {
+                            pref.set(voice.id)
+                            open = false
+                        })
+                    }
                 }
             }
-        }) { Text("▶") }
+        }
+        PreviewButton { pref.get() }
+    }
+}
+
+@Composable
+private fun PreviewButton(voiceId: () -> String) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    OutlinedButton(onClick = {
+        scope.launch {
+            runCatching { Yomu.readAloud.previewFish(voiceId()) }.onFailure {
+                Toast.makeText(context, it.message ?: "Fehler", Toast.LENGTH_LONG).show()
+            }
+        }
+    }) { Text("▶") }
+}
+
+/** The user's own Fish Audio voices: add by ID or link, search the library, preview, delete. */
+@Composable
+private fun MyFishVoices() {
+    val saved by FishVoices.all.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    Text("Meine Stimmen", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+    Text(
+        "Eigene Fish-Audio-Stimmen speichern. Sie tauchen danach auch bei „Stimmen für diesen Comic“ auf (mit ★).",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (saved.isEmpty()) {
+        Text("Noch keine eigenen Stimmen.", style = MaterialTheme.typography.bodyMedium)
+    }
+    saved.forEach { voice ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(voice.name, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    voice.id,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            PreviewButton { voice.id }
+            TextButton(onClick = { FishVoices.remove(voice.id) }) { Text("✕") }
+        }
+    }
+
+    // Add by ID or link
+    var name by remember { mutableStateOf("") }
+    var idText by remember { mutableStateOf("") }
+    var adding by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = idText,
+        onValueChange = { idText = it },
+        label = { Text("Stimmen-ID oder fish.audio-Link") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = name,
+        onValueChange = { name = it },
+        label = { Text("Name (leer = Name von Fish Audio)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Button(
+        enabled = !adding && idText.isNotBlank(),
+        onClick = {
+            val id = FishVoices.parseId(idText)
+            if (id == null) {
+                Toast.makeText(context, "Keine gültige Stimmen-ID gefunden (32 Zeichen).", Toast.LENGTH_LONG).show()
+            } else {
+                adding = true
+                scope.launch {
+                    val finalName = name.trim().ifEmpty { FishVoices.lookupTitle(id).orEmpty() }
+                    FishVoices.add(finalName, id)
+                    Toast.makeText(context, "Gespeichert: ${FishVoices.nameFor(id)}", Toast.LENGTH_SHORT).show()
+                    name = ""
+                    idText = ""
+                    adding = false
+                }
+            }
+        },
+    ) { Text(if (adding) "Speichere …" else "Stimme hinzufügen") }
+
+    // Search the Fish Audio library
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<FishSearchResult>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var searchError by remember { mutableStateOf<String?>(null) }
+    Text("In Fish Audio suchen", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("z. B. anime boy, deutsch, narrator") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(
+            enabled = !searching && query.isNotBlank(),
+            onClick = {
+                searching = true
+                searchError = null
+                scope.launch {
+                    runCatching { FishVoices.search(query) }
+                        .onSuccess {
+                            results = it
+                            if (it.isEmpty()) searchError = "Nichts gefunden."
+                        }
+                        .onFailure { searchError = it.message ?: "Fehler bei der Suche" }
+                    searching = false
+                }
+            },
+        ) { Text(if (searching) "…" else "Suchen") }
+    }
+    searchError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    results.forEach { result ->
+        val isSaved = saved.any { it.id == result.id }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(result.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val info = listOfNotNull(
+                    result.languages.takeIf { it.isNotEmpty() }?.joinToString(", "),
+                    result.description.takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                if (info.isNotEmpty()) {
+                    Text(
+                        info,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            PreviewButton { result.id }
+            TextButton(enabled = !isSaved, onClick = { FishVoices.add(result.title, result.id) }) {
+                Text(if (isSaved) "✓" else "+")
+            }
+        }
     }
 }

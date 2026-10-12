@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit
 enum class Speaker(val label: String) {
     YOUNG_WOMAN("Junge Frau"),
     WOMAN("Frau"),
+    YOUNG_MAN("Junger Mann"),
     MAN("Mann"),
     OLD_MAN("Älterer Mann"),
     NARRATOR("Erzähler"),
@@ -81,7 +82,7 @@ object Gemini {
     class QuotaException(message: String) : IOException(message)
 
     private fun cacheFileFor(image: File, translate: Boolean, rightToLeft: Boolean) =
-        File(cacheDir, md5("v4|${image.name}|${image.length()}|$translate|$rightToLeft") + ".json")
+        File(cacheDir, md5("v5|${image.name}|${image.length()}|$translate|$rightToLeft") + ".json")
 
     fun cached(image: File, rightToLeft: Boolean): PageScript? {
         val file = cacheFileFor(image, Yomu.prefs.aiTranslateGerman.get(), rightToLeft)
@@ -240,14 +241,15 @@ object Gemini {
         append("Ignore sound effects, watermarks, website names, page numbers and credits. ")
         append("For each line decide who speaks by looking at the character the bubble points to: ")
         append("\"young_woman\" for a young adult woman, \"woman\" for a mature woman, ")
-        append("\"man\" for a man, \"old_man\" for an elderly man, \"narrator\" for captions and narration boxes. ")
+        append("\"young_man\" for a young adult man (late teens to about 30), \"man\" for a grown, middle-aged man, ")
+        append("\"old_man\" for an elderly man, \"narrator\" for captions and narration boxes. ")
         if (translate) {
             append("Translate every line into natural, spoken German. Keep names unchanged. ")
         } else {
             append("Keep the original language and wording. ")
         }
         append("Reply ONLY with JSON: {\"pages\":[{\"page\":<n>,\"language\":\"<ISO 639-1 code of the text you output>\",")
-        append("\"lines\":[{\"speaker\":\"young_woman|woman|man|old_man|narrator\",\"name\":\"<character name or empty>\",")
+        append("\"lines\":[{\"speaker\":\"young_woman|woman|young_man|man|old_man|narrator\",\"name\":\"<character name or empty>\",")
         append("\"y\":<vertical centre of the bubble as a fraction of that page's full height, 0.0 = top, 1.0 = bottom>,\"text\":\"...\"}]}]}. ")
         append("Include every page, with \"lines\":[] when a page has no readable text.")
     }
@@ -281,6 +283,7 @@ object Gemini {
             val speaker = when (o["speaker"]?.jsonPrimitive?.contentOrNull?.lowercase()?.trim()) {
                 "young_woman", "young woman", "female", "f" -> Speaker.YOUNG_WOMAN
                 "woman", "mature_woman", "older_woman" -> Speaker.WOMAN
+                "young_man", "young man", "young_adult_man", "boy" -> Speaker.YOUNG_MAN
                 "man", "male", "m" -> Speaker.MAN
                 "old_man", "old man", "elderly_man" -> Speaker.OLD_MAN
                 else -> Speaker.NARRATOR

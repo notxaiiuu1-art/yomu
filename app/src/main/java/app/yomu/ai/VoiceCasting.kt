@@ -59,16 +59,22 @@ object VoiceCasting {
         }?.value
     }
 
-    /** The voices the user set up for the speaker types, offered when casting characters. */
+    /**
+     * Voices offered when casting characters: the ones set up for the speaker types, then the
+     * user's own saved Fish Audio voices. Each voice ID appears once.
+     */
     fun presets(): List<Pair<String, String>> {
         val p = Yomu.prefs
-        return listOf(
+        val roles = listOf(
             "Junge Frau" to p.fishYoungWoman.get(),
             "Frau (älter)" to p.fishWoman.get(),
+            "Junger Mann" to p.fishYoungMan.get(),
             "Mann" to p.fishMan.get(),
             "Älterer Mann" to p.fishOldMan.get(),
             "Erzähler" to p.fishNarrator.get(),
-        ).filter { it.second.isNotBlank() }
+        )
+        val own = FishVoices.all.value.map { "★ ${it.name}" to it.id }
+        return (roles + own).map { it.first to it.second.trim() }.filter { it.second.isNotBlank() }.distinctBy { it.second }
     }
 
     @Synchronized

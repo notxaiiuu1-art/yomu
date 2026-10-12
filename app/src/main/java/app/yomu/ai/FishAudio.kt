@@ -37,6 +37,7 @@ object FishAudio {
         return when (speaker) {
             Speaker.YOUNG_WOMAN -> prefs.fishYoungWoman.get()
             Speaker.WOMAN -> prefs.fishWoman.get()
+            Speaker.YOUNG_MAN -> prefs.fishYoungMan.get()
             Speaker.MAN -> prefs.fishMan.get()
             Speaker.OLD_MAN -> prefs.fishOldMan.get()
             Speaker.NARRATOR -> prefs.fishNarrator.get()
@@ -44,8 +45,10 @@ object FishAudio {
     }
 
     /** Returns the cached MP3 for [text] in [voiceId], generating it first if needed. */
-    suspend fun audio(text: String, voiceId: String): File = withContext(Dispatchers.IO) {
+    suspend fun audio(text: String, rawVoiceId: String): File = withContext(Dispatchers.IO) {
         val prefs = Yomu.prefs
+        // Accepts a plain ID or a pasted fish.audio link.
+        val voiceId = FishVoices.parseId(rawVoiceId) ?: rawVoiceId.trim()
         val key = prefs.fishKey.get().trim()
         if (key.isEmpty()) throw IOException("Kein Fish-Audio-Key. Trag ihn unter Einstellungen → KI-Vorlesen ein.")
         if (voiceId.isEmpty()) throw IOException("Für diese Stimme ist keine Fish-Audio-ID eingetragen.")

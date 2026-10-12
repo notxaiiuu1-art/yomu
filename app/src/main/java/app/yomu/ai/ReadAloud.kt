@@ -171,7 +171,7 @@ class ReadAloud(context: Context) {
         val prefs = Yomu.prefs
         val chosenName = when (speaker) {
             Speaker.YOUNG_WOMAN, Speaker.WOMAN -> prefs.voiceFemale.get()
-            Speaker.MAN, Speaker.OLD_MAN -> prefs.voiceMale.get()
+            Speaker.YOUNG_MAN, Speaker.MAN, Speaker.OLD_MAN -> prefs.voiceMale.get()
             Speaker.NARRATOR -> prefs.voiceNarrator.get()
         }
         val available = voices(language)
@@ -191,7 +191,7 @@ class ReadAloud(context: Context) {
             // No voice picked: different installed voices where possible, plus pitch.
             val offline = available.filter { !it.isNetworkConnectionRequired }.ifEmpty { available }
             val voice = when (speaker) {
-                Speaker.MAN, Speaker.OLD_MAN -> offline.getOrNull(1) ?: offline.firstOrNull()
+                Speaker.YOUNG_MAN, Speaker.MAN, Speaker.OLD_MAN -> offline.getOrNull(1) ?: offline.firstOrNull()
                 Speaker.NARRATOR -> offline.getOrNull(2) ?: offline.firstOrNull()
                 else -> offline.firstOrNull()
             }
@@ -200,6 +200,7 @@ class ReadAloud(context: Context) {
                 when (speaker) {
                     Speaker.YOUNG_WOMAN -> 1.2f
                     Speaker.WOMAN -> 1.05f
+                    Speaker.YOUNG_MAN -> 0.95f
                     Speaker.MAN -> 0.85f
                     Speaker.OLD_MAN -> 0.7f
                     Speaker.NARRATOR -> 1.0f
