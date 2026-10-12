@@ -66,16 +66,20 @@ class ReadAloud(context: Context) {
     val fishError = MutableStateFlow<String?>(null)
 
     /** Starts generating the audio for an upcoming line, so it plays without a gap. */
-    fun prefetch(line: SpokenLine) {
+    fun prefetch(line: SpokenLine, castKey: String? = null) {
         if (!usesFish) return
-        Yomu.scope.launch { runCatching { FishAudio.audio(line.text, FishAudio.voiceFor(line.speaker)) } }
+        Yomu.scope.launch { runCatching { FishAudio.audio(line.text, fishVoice(line, castKey)) } }
     }
 
     /** Speaks one line and returns when it has finished (or the coroutine is cancelled). */
-    suspend fun speak(line: SpokenLine, language: String) {
+    /** A character cast for this comic wins; otherwise the voice of the speaker type. */
+    private fun fishVoice(line: SpokenLine, castKey: String?): String =
+        castKey?.let { VoiceCasting.voiceFor(it, line.name) } ?: FishAudio.voiceFor(line.speaker)
+
+    suspend fun speak(line: SpokenLine, language: String, castKey: String? = null) {
         if (usesFish) {
             val file = try {
-                FishAudio.audio(line.text, FishAudio.voiceFor(line.speaker)).also { fishError.value = null }
+                FishAudio.audio(line.text, fishVoice(line, castKey)).also { fishError.value = null }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

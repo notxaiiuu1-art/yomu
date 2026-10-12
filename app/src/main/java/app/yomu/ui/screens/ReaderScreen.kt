@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -73,6 +75,7 @@ import app.yomu.ai.Gemini
 import app.yomu.ai.PageScript
 import app.yomu.ai.Speaker
 import app.yomu.ai.SpokenLine
+import app.yomu.ai.VoiceCasting
 import app.yomu.core.Images
 import app.yomu.core.ReaderMode
 import app.yomu.ui.LocalNavigator
@@ -83,6 +86,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -126,6 +130,13 @@ class ReaderScreen(
     private data class ScrollCommand(val chapterIndex: Int, val pageIndex: Int, val y: Float = -1f)
 
     private val pageCommands = MutableSharedFlow<ScrollCommand>(extraBufferCapacity = 8)
+
+    /** Key for this comic's voice casting. */
+    private val castKey = Yomu.library.key(source.id, manga.url)
+    private var castDialog by mutableStateOf(false)
+    private var castNames by mutableStateOf<List<String>>(emptyList())
+    private var castWaiter: CompletableDeferred<Unit>? = null
+    private var castAsked = false
 
     private val isWebtoon get() = mode == ReaderMode.WEBTOON || mode == ReaderMode.AUTO
 
@@ -317,17 +328,33 @@ class ReaderScreen(
             }
             // Analyse the next page while this one is being read out.
             if (i < pages.lastIndex) scriptFor(i + 1)
+
+            // First time with Fish Audio in this comic: let the user give the main characters their voices.
+            if (!castAsked && Yomu.readAloud.usesFish && !VoiceCasting.cast(castKey).setupDone) {
+                castAsked = true
+                aiStatus = "Figuren werden erkannt …"
+                val names = collectNames(from = i)
+                if (names.isNotEmpty()) {
+                    val waiter = CompletableDeferred<Unit>()
+                    castWaiter = waiter
+                    castNames = names
+                    castDialog = true
+                    aiStatus = "Stimmen auswählen …"
+                    waiter.await()
+                }
+                VoiceCasting.markDone(castKey)
+            }
             aiStatus = null
 
-            script.lines.firstOrNull()?.let { Yomu.readAloud.prefetch(it) }
+            script.lines.firstOrNull()?.let { Yomu.readAloud.prefetch(it, castKey) }
             for ((n, line) in script.lines.withIndex()) {
                 if (!aiOn || current != i) break
                 caption = line
                 // Generate the next line's audio while this one plays, so there is no pause.
-                script.lines.getOrNull(n + 1)?.let { Yomu.readAloud.prefetch(it) }
+                script.lines.getOrNull(n + 1)?.let { Yomu.readAloud.prefetch(it, castKey) }
                 // Webtoon: glide to the bubble that is being read.
                 if (isWebtoon && line.y >= 0f) pageCommands.emit(ScrollCommand(index, i, line.y))
-                Yomu.readAloud.speak(line, script.language.ifBlank { fallbackLang })
+                Yomu.readAloud.speak(line, script.language.ifBlank { fallbackLang }, castKey)
             }
             caption = null
             if (!aiOn) return
@@ -358,6 +385,110 @@ class ReaderScreen(
                 if (current == i) {
                     stopAi("Konnte nicht weiterblättern.")
                     return
+                }
+            }
+        }
+    }
+
+    /** Character names Gemini found on the next pages (most frequent first) plus already cast ones. */
+    private suspend fun collectNames(from: Int): List<String> {
+        val counts = HashMap<String, Int>()
+        for (p in from..minOf(from + 5, pages.lastIndex)) {
+            val script = runCatching { scriptFor(p).await() }.getOrNull() ?: continue
+            script.lines.map { it.name.trim() }.filter { it.length >= 2 }.forEach { counts[it] = (counts[it] ?: 0) + 1 }
+        }
+        val known = VoiceCasting.cast(castKey).characters.keys
+        return (counts.entries.sortedByDescending { it.value }.map { it.key } + known).distinct().take(12)
+    }
+
+    private fun openCasting() {
+        menu = false
+        scope.launch {
+            val found = scripts.values
+                .filter { it.isCompleted && !it.isCancelled }
+                .mapNotNull { runCatching { it.getCompleted() }.getOrNull() }
+                .flatMap { s -> s.lines.map { it.name.trim() } }
+                .filter { it.length >= 2 }
+            castNames = (found.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key } +
+                VoiceCasting.cast(castKey).characters.keys).distinct().take(12)
+            castDialog = true
+        }
+    }
+
+    private fun closeCasting() {
+        castDialog = false
+        castWaiter?.complete(Unit)
+        castWaiter = null
+    }
+
+    @Composable
+    private fun CastDialog() {
+        val all by VoiceCasting.all.collectAsState()
+        val cast = all[castKey] ?: app.yomu.ai.MangaCast()
+        val presets = VoiceCasting.presets()
+        var newName by remember { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = ::closeCasting,
+            title = { Text("Stimmen für diesen Comic") },
+            text = {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        if (castNames.isEmpty()) "Noch keine Figuren erkannt. Du kannst unten selbst welche hinzufügen."
+                        else "Wähl für die Hauptfiguren eine Stimme. „Automatisch“ = Stimme nach Rolle.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    castNames.forEach { name ->
+                        CastRow(name, cast.characters[name], presets)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            singleLine = true,
+                            placeholder = { Text("Figur hinzufügen …") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = {
+                            val n = newName.trim()
+                            if (n.isNotEmpty() && n !in castNames) castNames = castNames + n
+                            newName = ""
+                        }) { Text("+") }
+                    }
+                }
+            },
+            confirmButton = { Button(onClick = ::closeCasting) { Text("Los geht's") } },
+        )
+    }
+
+    @Composable
+    private fun CastRow(name: String, selectedId: String?, presets: List<Pair<String, String>>) {
+        var open by remember { mutableStateOf(false) }
+        val label = presets.firstOrNull { it.second == selectedId }?.first ?: if (selectedId != null) "Eigene ID" else "Automatisch"
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Box {
+                androidx.compose.material3.OutlinedButton(onClick = { open = true }) { Text(label) }
+                androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Automatisch") },
+                        onClick = {
+                            VoiceCasting.setVoice(castKey, name, null)
+                            open = false
+                        },
+                    )
+                    presets.forEach { (presetLabel, id) ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(presetLabel) },
+                            onClick = {
+                                VoiceCasting.setVoice(castKey, name, id)
+                                open = false
+                                scope.launch { runCatching { Yomu.readAloud.previewFish(id) } }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -474,6 +605,7 @@ class ReaderScreen(
             }
 
             if (menu) Menu(onBack = { nav.pop() })
+            if (castDialog) CastDialog()
         }
     }
 
@@ -819,6 +951,10 @@ class ReaderScreen(
                         valueRange = 0f..pages.lastIndex.toFloat(),
                     )
                 }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = ::openCasting,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                ) { Text("🎭 Stimmen für diesen Comic") }
                 Button(onClick = ::toggleAi, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                     Text(if (aiOn) "⏹ Vorlesen stoppen" else "🔊 KI-Vorlesen starten")
                 }

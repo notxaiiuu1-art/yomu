@@ -25,6 +25,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.yomu.Yomu
+import app.yomu.core.CrashLog
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import app.yomu.ui.screens.HomeScreen
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -63,10 +67,54 @@ class MainActivity : ComponentActivity() {
                         ) { screen ->
                             screen.Content()
                         }
+                        CrashReport()
                     }
                 }
             }
         }
+    }
+
+    /** After a crash, shows what went wrong once, with a button to copy it. */
+    @androidx.compose.runtime.Composable
+    private fun CrashReport() {
+        var report by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(CrashLog.read()) }
+        val text = report ?: return
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                CrashLog.clear()
+                report = null
+            },
+            title = { androidx.compose.material3.Text("Yomu ist abgestürzt") },
+            text = {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                ) {
+                    androidx.compose.material3.Text(
+                        "Mach einen Screenshot oder kopiere den Text und schick ihn an Claude, dann kann der Fehler behoben werden.\n",
+                    )
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        androidx.compose.material3.Text(
+                            text,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Yomu Absturz", text))
+                    android.widget.Toast.makeText(this, "Kopiert", android.widget.Toast.LENGTH_SHORT).show()
+                }) { androidx.compose.material3.Text("Kopieren") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    CrashLog.clear()
+                    report = null
+                }) { androidx.compose.material3.Text("Schließen") }
+            },
+        )
     }
 
     /** The Pixel 8a panel goes up to 120 Hz; ask for it so scrolling stays buttery. */

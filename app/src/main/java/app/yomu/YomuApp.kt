@@ -3,6 +3,7 @@ package app.yomu
 import android.app.Application
 import android.content.Context
 import app.yomu.ai.ReadAloud
+import app.yomu.core.CrashLog
 import app.yomu.core.Library
 import app.yomu.core.Prefs
 import app.yomu.extension.ExtensionManager
@@ -52,6 +53,7 @@ object Yomu {
 class YomuApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         Yomu.init(this)
 
         // Extensions look these up through Injekt, exactly as in other Tachiyomi-family apps.
