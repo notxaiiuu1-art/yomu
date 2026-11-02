@@ -86,8 +86,9 @@ class SourceScreen(private val sourceId: Long) : Screen() {
     private fun reset(newListing: Listing) {
         job?.cancel()
         listing = newListing
-        search = if (newListing == Listing.SEARCH && source != null) {
-            SourceHashtags.prepare(query, runCatching { source.getFilterList() }.getOrElse { FilterList() })
+        val src = source
+        search = if (newListing == Listing.SEARCH && src != null) {
+            SourceHashtags.prepare(query, runCatching { src.getFilterList() }.getOrElse { FilterList() })
         } else {
             null
         }
