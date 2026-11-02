@@ -59,6 +59,21 @@ jobs:
             Dauerhafter Link zur neuesten Version:
             https://github.com/${{ github.repository }}/releases/latest/download/orbis.apk
 
+      # Builds of other branches go to one fixed pre-release, so there is always a direct
+      # download link without signing in. It never becomes the repository's "latest" release.
+      - name: Publish preview
+        if: success() && github.ref != 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: orbis-preview
+          name: Orbis Vorschau
+          prerelease: true
+          make_latest: false
+          files: out/orbis.apk
+          body: |
+            Vorschau-Build von Orbis (Build ${{ github.run_number }}).
+            Auf dem Handy öffnen, **orbis.apk** antippen und installieren.
+
       - name: Show compiler errors
         if: failure()
         run: |
