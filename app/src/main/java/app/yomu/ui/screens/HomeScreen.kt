@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -89,7 +90,20 @@ private fun LibraryTab(onBrowse: () -> Unit) {
         maxOf(progress[Yomu.library.key(it.sourceId, it.url)]?.lastReadAt ?: 0L, it.addedAt)
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Bibliothek") }) }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Bibliothek") },
+                actions = {
+                    if (favorites.isNotEmpty()) {
+                        IconButton(onClick = { nav.push(LibrarySearchScreen()) }) {
+                            Icon(Icons.Filled.Search, "Bibliothek durchsuchen")
+                        }
+                    }
+                },
+            )
+        },
+    ) { padding ->
         if (sorted.isEmpty()) {
             Column(
                 Modifier.fillMaxSize().padding(padding).padding(32.dp),

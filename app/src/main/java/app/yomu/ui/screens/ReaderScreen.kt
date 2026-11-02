@@ -275,7 +275,10 @@ class ReaderScreen(
         val batch = (i..minOf(i + 5, list.lastIndex)).filter { scripts[scriptKeyFor(ch, it)] == null }
         val request = scope.async(Dispatchers.IO) {
             val files = batch.map { Images.pageFile(source, ch.url, list[it]) }
-            Gemini.readPages(files, rtl)
+            Gemini.readPages(files, rtl).also { read ->
+                // Remember what's said in the comic, so the library search can find it.
+                app.yomu.core.ComicText.add(castKey, read.flatMap { s -> s.lines.map { it.text } })
+            }
         }
         batch.forEachIndexed { n, page ->
             scripts[scriptKeyFor(ch, page)] = scope.async { request.await()[n] }

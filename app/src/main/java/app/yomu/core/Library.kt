@@ -16,6 +16,13 @@ data class SavedManga(
     val title: String,
     val thumbnail: String? = null,
     val addedAt: Long = System.currentTimeMillis(),
+    // Details for the library search; filled when the comic's page is opened.
+    val author: String? = null,
+    val artist: String? = null,
+    val description: String? = null,
+    val genre: String? = null,
+    /** When the details above were last loaded from the source, 0 = never. */
+    val detailsAt: Long = 0,
 )
 
 @Serializable
@@ -31,6 +38,8 @@ data class Progress(
 private data class LibraryFile(
     val favorites: List<SavedManga> = emptyList(),
     val progress: Map<String, Progress> = emptyMap(),
+    /** Own hashtags per comic (key = [Library.key]); kept even when a comic is removed from the library. */
+    val tags: Map<String, List<String>> = emptyMap(),
 )
 
 /** Favourites and reading progress, kept in one small JSON file. */
@@ -49,7 +58,18 @@ class Library(context: Context) {
     private val _progress = MutableStateFlow(state.value.progress)
     val progress: StateFlow<Map<String, Progress>> = _progress.asStateFlow()
 
+    private val _tags = MutableStateFlow(state.value.tags)
+    val tags: StateFlow<Map<String, List<String>>> = _tags.asStateFlow()
+
     fun key(sourceId: Long, url: String) = "$sourceId|$url"
+
+    fun tagsOf(sourceId: Long, url: String): List<String> = _tags.value[key(sourceId, url)].orEmpty()
+
+    fun setTags(sourceId: Long, url: String, tags: List<String>) {
+        val k = key(sourceId, url)
+        _tags.update { map -> if (tags.isEmpty()) map - k else map + (k to tags) }
+        save()
+    }
 
     fun isFavorite(sourceId: Long, url: String) = _favorites.value.any { it.sourceId == sourceId && it.url == url }
 
@@ -66,7 +86,21 @@ class Library(context: Context) {
 
     fun updateFavorite(manga: SavedManga) {
         _favorites.update { list ->
-            list.map { if (it.sourceId == manga.sourceId && it.url == manga.url) manga.copy(addedAt = it.addedAt) else it }
+            list.map { old ->
+                if (old.sourceId == manga.sourceId && old.url == manga.url) {
+                    // Never lose details we already have because one refresh came back thin.
+                    manga.copy(
+                        addedAt = old.addedAt,
+                        author = manga.author ?: old.author,
+                        artist = manga.artist ?: old.artist,
+                        description = manga.description ?: old.description,
+                        genre = manga.genre ?: old.genre,
+                        detailsAt = maxOf(manga.detailsAt, old.detailsAt),
+                    )
+                } else {
+                    old
+                }
+            }
         }
         save()
     }
@@ -101,7 +135,7 @@ class Library(context: Context) {
 
     @Synchronized
     private fun save() {
-        val data = LibraryFile(_favorites.value, _progress.value)
+        val data = LibraryFile(_favorites.value, _progress.value, _tags.value)
         runCatching {
             val tmp = File(file.parentFile, "library.json.tmp")
             tmp.writeText(json.encodeToString(LibraryFile.serializer(), data))
