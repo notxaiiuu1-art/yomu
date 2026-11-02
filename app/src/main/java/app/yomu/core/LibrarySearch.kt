@@ -168,7 +168,7 @@ object LibrarySearch {
     private fun docTags(doc: SearchDoc): List<String> = (doc.genres + doc.userTags).distinctBy { tagKey(it) }
 
     /** How well a comic's tag [tag] answers the query tag [q]: 3 same, 2 related, 1 starts with, 0 no. */
-    private fun tagScore(tag: String, q: String): Int {
+    fun tagScore(tag: String, q: String): Int {
         val t = tagKey(tag)
         val k = tagKey(q)
         if (t.isEmpty() || k.isEmpty()) return 0

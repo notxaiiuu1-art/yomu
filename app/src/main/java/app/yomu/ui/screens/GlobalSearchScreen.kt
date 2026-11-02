@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.yomu.Yomu
+import app.yomu.core.SourceHashtags
 import app.yomu.ui.LocalNavigator
 import app.yomu.ui.MangaCard
 import app.yomu.ui.Screen
@@ -50,6 +51,8 @@ class GlobalSearchScreen(private val query: String, sourceIds: List<Long>) : Scr
 
     private val sources = sourceIds.mapNotNull { Yomu.extensions.source(it) }
     private val results = mutableStateMapOf<Long, SearchResult>()
+    /** Per source: which genre a #hashtag became, or that it was searched as text. */
+    private val notes = mutableStateMapOf<Long, String>()
     // Scroll positions live with the screen, so coming back from a comic keeps them.
     private val listState = LazyListState()
     private val rowStates = HashMap<Long, LazyListState>()
@@ -62,7 +65,9 @@ class GlobalSearchScreen(private val query: String, sourceIds: List<Long>) : Scr
                 val result = try {
                     limit.withPermit {
                         withContext(Dispatchers.IO) {
-                            SearchResult.Done(source.getSearchManga(1, query, source.getFilterList()).mangas)
+                            val prepared = SourceHashtags.prepare(query, source.getFilterList())
+                            prepared.note()?.let { notes[source.id] = it }
+                            SearchResult.Done(source.getSearchManga(1, prepared.text, prepared.filters).mangas)
                         }
                     }
                 } catch (e: Throwable) {
@@ -109,6 +114,15 @@ class GlobalSearchScreen(private val query: String, sourceIds: List<Long>) : Scr
                         ) {
                             Text(source.name, style = MaterialTheme.typography.titleMedium)
                             Text(langName(source.lang), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        notes[source.id]?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
                         }
                         when (result) {
                             SearchResult.Loading, null ->

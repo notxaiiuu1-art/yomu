@@ -68,19 +68,15 @@ class BrowseTab {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("In allen Quellen suchen … (#Tag = Bibliothek)") },
+                    placeholder = { Text("In allen Quellen suchen … oder #Genre") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(
                         onSearch = {
                             val q = query.trim()
-                            when {
-                                q.isEmpty() -> Unit
-                                // Hashtags live in the library, so "#fun" searches there.
-                                q.startsWith("#") -> nav.push(LibrarySearchScreen("$q "))
-                                else -> nav.push(GlobalSearchScreen(q, sources.map { it.id }))
-                            }
+                            // "#fun" becomes each source's matching genre filter (see SourceHashtags).
+                            if (q.isNotEmpty()) nav.push(GlobalSearchScreen(q, sources.map { it.id }))
                         },
                     ),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
