@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Orbis mark: an orbit ring with a satellite. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:pathData="M54,36 A18,18 0 1,1 53.99,36 Z" />
+    <path
+        android:fillColor="#FF2DD4BF"
+        android:pathData="M72,34 A6,6 0 1,1 71.99,34 Z" />
+</vector>
