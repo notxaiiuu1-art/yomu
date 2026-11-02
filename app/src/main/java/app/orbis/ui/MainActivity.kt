@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import app.orbis.data.Bank
 import app.orbis.data.Money
-import app.orbis.data.ThemeMode
 import app.orbis.ui.screens.AuthScreen
 import app.orbis.ui.screens.BudgetsScreen
 import app.orbis.ui.screens.ContactsScreen
@@ -104,9 +103,12 @@ class MainActivity : ComponentActivity() {
                                 pendingLink = null
                             })
                         } else {
-                            AppContent()
+                            // While locked, the app itself is not composed at all, so nothing behind
+                            // the PIN screen can be seen or tapped. The navigation stack survives.
                             if (locked) {
                                 AuthScreen(lockFor = me.id, onUnlocked = { locked = false })
+                            } else {
+                                AppContent()
                             }
                         }
                         ToastHost()
@@ -218,6 +220,3 @@ private fun ToastHost() {
         }
     }
 }
-
-@Suppress("unused")
-private fun ThemeMode.isDark() = this == ThemeMode.DARK || this == ThemeMode.AMOLED

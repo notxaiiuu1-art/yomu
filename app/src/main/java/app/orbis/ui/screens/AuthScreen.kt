@@ -104,8 +104,7 @@ fun AuthScreen(lockFor: String? = null, onUnlocked: (String) -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(O.c.bg)
-            .clickable(enabled = false) {},
+            .background(O.c.bg),
     ) {
         Backdrop()
         AnimatedContent(step, transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(200)) }, label = "auth") { s ->

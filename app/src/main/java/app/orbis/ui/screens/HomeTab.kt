@@ -242,7 +242,7 @@ private fun BalanceCard(me: Account, s: BankState, mine: List<Txn>) {
             }
             AnimatedContent(hidden, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "hide") { h ->
                 Text(
-                    if (h) "•••••• ${s.settings.currencySymbol}" else Money.format(animated.toLong(), s.settings),
+                    if (h) "•••••• ${s.settings.currencySymbol}" else Money.format(if (kotlin.math.abs(animated - me.balance.toFloat()) < 1f) me.balance else animated.toLong(), s.settings),
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 38.sp, maxLines = 1,
                 )
             }
