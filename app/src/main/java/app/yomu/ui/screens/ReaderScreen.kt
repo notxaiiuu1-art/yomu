@@ -235,7 +235,9 @@ class ReaderScreen(
         if (item.chapterIndex != index) {
             // Crossing a chapter border: the previous chapter counts as read.
             if (item.chapterIndex > index) {
-                Yomu.library.saveProgress(source.id, manga.url, chapter.url, chapter.name, pages.lastIndex, true)
+                Yomu.library.saveProgress(
+                    source.id, manga.url, chapter.url, chapter.name, pages.lastIndex, true, manga.title, manga.thumbnail_url,
+                )
             }
             index = item.chapterIndex
             pages = chapterPages[index].orEmpty()
@@ -248,7 +250,9 @@ class ReaderScreen(
         current = page
         preload(page)
         val finished = page >= pages.lastIndex
-        Yomu.library.saveProgress(source.id, manga.url, chapter.url, chapter.name, page, finished)
+        Yomu.library.saveProgress(
+            source.id, manga.url, chapter.url, chapter.name, page, finished, manga.title, manga.thumbnail_url,
+        )
     }
 
     override fun onDispose() {
@@ -275,7 +279,10 @@ class ReaderScreen(
         val batch = (i..minOf(i + 5, list.lastIndex)).filter { scripts[scriptKeyFor(ch, it)] == null }
         val request = scope.async(Dispatchers.IO) {
             val files = batch.map { Images.pageFile(source, ch.url, list[it]) }
-            Gemini.readPages(files, rtl)
+            Gemini.readPages(files, rtl).also { read ->
+                // Remember what's said in the comic, so the library search can find it.
+                app.yomu.core.ComicText.add(castKey, read.flatMap { s -> s.lines.map { it.text } })
+            }
         }
         batch.forEachIndexed { n, page ->
             scripts[scriptKeyFor(ch, page)] = scope.async { request.await()[n] }

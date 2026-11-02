@@ -35,12 +35,12 @@ import app.yomu.ui.langName
 private val LANGS = listOf("de", "en", "all", "ja", "ko", "zh", "es", "fr", "it", "pt-BR", "ru", "tr", "id", "vi")
 
 @Composable
-fun SettingsTab() {
+fun SettingsTab(scroll: androidx.compose.foundation.ScrollState = rememberScrollState()) {
     val prefs = Yomu.prefs
     val context = LocalContext.current
     Scaffold(topBar = { TopAppBar(title = { Text("Einstellungen") }) }) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxSize().padding(padding).verticalScroll(scroll),
         ) {
             Header("Lesen")
             val readerMode by prefs.readerMode.flow.collectAsState()

@@ -4,6 +4,20 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.input.ImeAction
+import app.yomu.core.LibrarySearch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +27,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -63,7 +79,11 @@ import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
-class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
+/**
+ * @param resume open the reader at the last read chapter as soon as the chapters are loaded
+ *   (used by "Zuletzt gelesen").
+ */
+class MangaScreen(private val sourceId: Long, initial: SManga, resume: Boolean = false) : Screen() {
 
     private val source = Yomu.extensions.source(sourceId)
     private var manga by mutableStateOf(initial)
@@ -71,6 +91,11 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
     private var loading by mutableStateOf(true)
     private var error by mutableStateOf<String?>(null)
     private var descriptionExpanded by mutableStateOf(false)
+    private var detailsLoaded = false
+    private var tagDialog by mutableStateOf(false)
+    private var pendingResume = resume
+    /** Lives with the screen, so coming back from the reader keeps the chapter list where it was. */
+    private val listState = LazyListState()
 
     init {
         refresh()
@@ -96,6 +121,7 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
                 if (details.thumbnail_url.isNullOrBlank()) details.thumbnail_url = manga.thumbnail_url
                 manga = details
                 chapters = update.chapters
+                detailsLoaded = true
                 if (Yomu.library.isFavorite(sourceId, manga.url)) {
                     Yomu.library.updateFavorite(saved())
                 }
@@ -108,7 +134,17 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
         }
     }
 
-    private fun saved() = SavedManga(sourceId, manga.url, manga.title, manga.thumbnail_url)
+    private fun saved() = SavedManga(
+        sourceId = sourceId,
+        url = manga.url,
+        title = manga.title,
+        thumbnail = manga.thumbnail_url,
+        author = manga.author?.takeIf { it.isNotBlank() },
+        artist = manga.artist?.takeIf { it.isNotBlank() },
+        description = manga.description?.takeIf { it.isNotBlank() },
+        genre = manga.genre?.takeIf { it.isNotBlank() },
+        detailsAt = if (detailsLoaded) System.currentTimeMillis() else 0L,
+    )
 
     private fun open(chapter: SChapter) {
         val src = source as? HttpSource ?: return
@@ -132,6 +168,19 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
         val isFavorite = favorites.any { it.sourceId == sourceId && it.url == manga.url }
         val progress = progressMap[Yomu.library.key(sourceId, manga.url)]
         val readSet = progress?.read.orEmpty()
+        val allTags by Yomu.library.tags.collectAsState()
+        val ownTags = allTags[Yomu.library.key(sourceId, manga.url)].orEmpty()
+
+        if (tagDialog) {
+            HashtagDialog(
+                onDismiss = { tagDialog = false },
+                onAdd = { added ->
+                    val merged = (ownTags + added).distinctBy { LibrarySearch.tagKey(it) }
+                    Yomu.library.setTags(sourceId, manga.url, merged)
+                    tagDialog = false
+                },
+            )
+        }
 
         Scaffold(
             topBar = {
@@ -154,7 +203,18 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
                 )
             },
         ) { padding ->
-            LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 32.dp)) {
+            LaunchedEffect(chapters) {
+                if (pendingResume && chapters.isNotEmpty()) {
+                    pendingResume = false
+                    val last = Yomu.library.progressOf(sourceId, manga.url).lastChapterUrl
+                    chapters.firstOrNull { it.url == last }?.let(::open)
+                }
+            }
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 32.dp),
+            ) {
                 item {
                     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         CoverImage(
@@ -213,13 +273,40 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
                         )
                     }
                 }
-                manga.genre?.takeIf { it.isNotBlank() }?.let { genre ->
-                    item {
-                        Text(
-                            genre,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 16.dp),
+                item {
+                    // Genres from the source and own hashtags; tapping one searches the library.
+                    val genres = LibrarySearch.splitGenres(manga.genre)
+                    val ownKeys = ownTags.map { LibrarySearch.tagKey(it) }.toSet()
+                    FlowRow(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        genres.filter { LibrarySearch.tagKey(it) !in ownKeys }.forEach { tag ->
+                            SuggestionChip(
+                                onClick = { nav.push(LibrarySearchScreen(hashtagQuery(tag))) },
+                                label = { Text("#$tag") },
+                            )
+                        }
+                        ownTags.forEach { tag ->
+                            InputChip(
+                                selected = true,
+                                onClick = { nav.push(LibrarySearchScreen(hashtagQuery(tag))) },
+                                label = { Text("#$tag") },
+                                trailingIcon = {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        "Hashtag entfernen",
+                                        Modifier.size(18.dp).clickable {
+                                            Yomu.library.setTags(sourceId, manga.url, ownTags - tag)
+                                        },
+                                    )
+                                },
+                            )
+                        }
+                        AssistChip(
+                            onClick = { tagDialog = true },
+                            label = { Text("Hashtag") },
+                            leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) },
                         )
                     }
                 }
@@ -285,6 +372,40 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
             }
         }
     }
+}
+
+/** "Slice of Life" → "#SliceofLife ", ready to search. */
+private fun hashtagQuery(tag: String) = "#" + tag.filter { !it.isWhitespace() } + " "
+
+@Composable
+private fun HashtagDialog(onDismiss: () -> Unit, onAdd: (List<String>) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    val tags = LibrarySearch.splitUserTags(text)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Eigene Hashtags") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("z. B. fun lieblings spannend") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (tags.isNotEmpty()) onAdd(tags) }),
+                )
+                Text(
+                    if (tags.isEmpty()) "Mehrere mit Leerzeichen trennen." else tags.joinToString("  ") { "#$it" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAdd(tags) }, enabled = tags.isNotEmpty()) { Text("Hinzufügen") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
+    )
 }
 
 private fun statusLabel(status: Int) = when (status) {

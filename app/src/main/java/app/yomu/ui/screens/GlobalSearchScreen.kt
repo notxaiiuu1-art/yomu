@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -49,6 +50,9 @@ class GlobalSearchScreen(private val query: String, sourceIds: List<Long>) : Scr
 
     private val sources = sourceIds.mapNotNull { Yomu.extensions.source(it) }
     private val results = mutableStateMapOf<Long, SearchResult>()
+    // Scroll positions live with the screen, so coming back from a comic keeps them.
+    private val listState = LazyListState()
+    private val rowStates = HashMap<Long, LazyListState>()
 
     init {
         val limit = Semaphore(6)
@@ -91,7 +95,7 @@ class GlobalSearchScreen(private val query: String, sourceIds: List<Long>) : Scr
                 )
             },
         ) { padding ->
-            LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) {
+            LazyColumn(Modifier.padding(padding), state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
                 items(ordered, key = { it.id }) { source ->
                     val result = results[source.id]
                     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -123,6 +127,7 @@ class GlobalSearchScreen(private val query: String, sourceIds: List<Long>) : Scr
                                 )
                             } else {
                                 LazyRow(
+                                    state = rowStates.getOrPut(source.id) { LazyListState() },
                                     contentPadding = PaddingValues(horizontal = 16.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {

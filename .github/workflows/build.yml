@@ -2,14 +2,15 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    # Other branches only check that the app builds; releases come from main.
+    branches: [main, 'claude/**']
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: build
+  group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -40,7 +41,7 @@ jobs:
           ls -la out
 
       - name: Publish release
-        if: success()
+        if: success() && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
@@ -61,7 +62,7 @@ jobs:
 
       # Writes the build result to the `ci-logs` branch, so problems can be read with plain git.
       - name: Save build log
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         run: |
           RESULT="${{ steps.build.outcome }}"
           mkdir -p /tmp/ci && cd /tmp/ci

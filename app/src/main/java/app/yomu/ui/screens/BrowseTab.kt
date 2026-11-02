@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,6 +44,7 @@ import kotlinx.coroutines.CoroutineScope
 /** Installed sources plus a search box that searches all of them at once. */
 class BrowseTab {
     private var query by mutableStateOf("")
+    private val listState = LazyListState()
 
     @Composable
     fun Content(@Suppress("UNUSED_PARAMETER") scope: CoroutineScope) {
@@ -66,13 +68,19 @@ class BrowseTab {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("In allen Quellen suchen …") },
+                    placeholder = { Text("In allen Quellen suchen … (#Tag = Bibliothek)") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(
                         onSearch = {
-                            if (query.isNotBlank()) nav.push(GlobalSearchScreen(query.trim(), sources.map { it.id }))
+                            val q = query.trim()
+                            when {
+                                q.isEmpty() -> Unit
+                                // Hashtags live in the library, so "#fun" searches there.
+                                q.startsWith("#") -> nav.push(LibrarySearchScreen("$q "))
+                                else -> nav.push(GlobalSearchScreen(q, sources.map { it.id }))
+                            }
                         },
                     ),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -98,7 +106,7 @@ class BrowseTab {
                     return@Column
                 }
 
-                LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
                     items(sources, key = { it.id }) { source ->
                         ListItem(
                             leadingContent = {

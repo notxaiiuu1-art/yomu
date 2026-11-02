@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,6 +49,7 @@ import kotlinx.coroutines.launch
 
 class ExtensionsTab {
     private var filter by mutableStateOf("")
+    private val listState = LazyListState()
     private var onlyInstalled by mutableStateOf(false)
     private var refreshing by mutableStateOf(false)
 
@@ -115,7 +117,7 @@ class ExtensionsTab {
                     Text("Lade Erweiterungen von Keiyoushi …", modifier = Modifier.padding(16.dp))
                 }
 
-                LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
                     items(visible, key = { it.pkg }) { entry ->
                         val ext = installedByPkg[entry.pkg]
                         val working = entry.pkg in busy
