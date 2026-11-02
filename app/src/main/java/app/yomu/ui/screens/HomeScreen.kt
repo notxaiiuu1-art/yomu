@@ -1,6 +1,14 @@
 package app.yomu.ui.screens
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -43,6 +51,9 @@ class HomeScreen : Screen() {
     private var tab by mutableIntStateOf(0)
     private val browse = BrowseTab()
     private val extensions = ExtensionsTab()
+    // Scroll positions live here, so they survive opening a comic and switching tabs.
+    private val libraryGrid = LazyGridState()
+    private val settingsScroll = ScrollState(0)
 
     @Composable
     override fun Content() {
@@ -68,18 +79,28 @@ class HomeScreen : Screen() {
         ) { padding ->
             Box(Modifier.padding(padding)) {
                 when (tab) {
-                    0 -> LibraryTab(onBrowse = { tab = 1 })
+                    0 -> LibraryTab(onBrowse = { tab = 1 }, gridState = libraryGrid)
                     1 -> browse.Content(scope)
                     2 -> extensions.Content(scope)
-                    else -> SettingsTab()
+                    else -> SettingsTab(settingsScroll)
                 }
             }
         }
     }
 }
 
+/** A comic from the reading history, newest first. */
+private class RecentRead(
+    val sourceId: Long,
+    val url: String,
+    val title: String,
+    val thumbnail: String?,
+    val chapterName: String?,
+    val page: Int,
+)
+
 @Composable
-private fun LibraryTab(onBrowse: () -> Unit) {
+private fun LibraryTab(onBrowse: () -> Unit, gridState: LazyGridState) {
     val nav = LocalNavigator.current
     val favorites by Yomu.library.favorites.collectAsState()
     val progress by Yomu.library.progress.collectAsState()
@@ -89,6 +110,24 @@ private fun LibraryTab(onBrowse: () -> Unit) {
     val sorted = favorites.sortedByDescending {
         maxOf(progress[Yomu.library.key(it.sourceId, it.url)]?.lastReadAt ?: 0L, it.addedAt)
     }
+
+    // Last read comics, saved or not. Older history entries only have a title if the comic is saved.
+    val recent = remember(progress, favorites) {
+        val byKey = favorites.associateBy { Yomu.library.key(it.sourceId, it.url) }
+        progress.entries
+            .filter { it.value.lastReadAt > 0 && it.value.lastChapterUrl != null }
+            .sortedByDescending { it.value.lastReadAt }
+            .mapNotNull { (key, p) ->
+                val sourceId = key.substringBefore('|').toLongOrNull() ?: return@mapNotNull null
+                val url = key.substringAfter('|')
+                val saved = byKey[key]
+                val title = p.title ?: saved?.title ?: return@mapNotNull null
+                RecentRead(sourceId, url, title, p.thumbnail ?: saved?.thumbnail, p.lastChapterName, p.lastPage)
+            }
+            .take(20)
+    }
+
+    fun sourceOf(id: Long) = installed.firstNotNullOfOrNull { ext -> ext.sources.firstOrNull { it.id == id } }
 
     Scaffold(
         topBar = {
@@ -104,7 +143,7 @@ private fun LibraryTab(onBrowse: () -> Unit) {
             )
         },
     ) { padding ->
-        if (sorted.isEmpty()) {
+        if (sorted.isEmpty() && recent.isEmpty()) {
             Column(
                 Modifier.fillMaxSize().padding(padding).padding(32.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
@@ -120,19 +159,55 @@ private fun LibraryTab(onBrowse: () -> Unit) {
             return@Scaffold
         }
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(columns),
             contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 24.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.padding(padding),
         ) {
+            if (recent.isNotEmpty()) {
+                item(key = "recent", span = { GridItemSpan(maxLineSpan) }) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Zuletzt gelesen", style = MaterialTheme.typography.titleMedium)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(recent, key = { "${it.sourceId}|${it.url}" }) { r ->
+                                Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    // Tapping continues reading right where you stopped.
+                                    MangaCard(title = r.title, cover = r.thumbnail, source = sourceOf(r.sourceId), badge = "▶") {
+                                        val manga = SManga.create().apply {
+                                            url = r.url
+                                            title = r.title
+                                            thumbnail_url = r.thumbnail
+                                        }
+                                        nav.push(MangaScreen(r.sourceId, manga, resume = true))
+                                    }
+                                    Text(
+                                        listOfNotNull(r.chapterName, "S. ${r.page + 1}").joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                        if (sorted.isNotEmpty()) {
+                            Text(
+                                "Gespeichert",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
             items(sorted, key = { "${it.sourceId}|${it.url}" }) { saved ->
-                val source = installed.firstNotNullOfOrNull { ext -> ext.sources.firstOrNull { it.id == saved.sourceId } }
                 val p = progress[Yomu.library.key(saved.sourceId, saved.url)]
                 MangaCard(
                     title = saved.title,
                     cover = saved.thumbnail,
-                    source = source,
+                    source = sourceOf(saved.sourceId),
                     badge = p?.lastChapterName?.let { "▶" },
                     onClick = {
                         val manga = SManga.create().apply {

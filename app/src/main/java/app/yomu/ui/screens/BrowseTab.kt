@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,6 +44,7 @@ import kotlinx.coroutines.CoroutineScope
 /** Installed sources plus a search box that searches all of them at once. */
 class BrowseTab {
     private var query by mutableStateOf("")
+    private val listState = LazyListState()
 
     @Composable
     fun Content(@Suppress("UNUSED_PARAMETER") scope: CoroutineScope) {
@@ -104,7 +106,7 @@ class BrowseTab {
                     return@Column
                 }
 
-                LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
                     items(sources, key = { it.id }) { source ->
                         ListItem(
                             leadingContent = {

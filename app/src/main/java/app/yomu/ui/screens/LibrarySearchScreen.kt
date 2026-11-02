@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -88,6 +89,15 @@ class LibrarySearchScreen(initialQuery: String = "") : Screen() {
 
     /** Saved comics whose description and genres are still being fetched. */
     private var fetching by mutableIntStateOf(0)
+
+    /** Lives with the screen, so coming back from a comic keeps the scroll position. */
+    private var listState by mutableStateOf(LazyListState())
+    private var listedQuery: LibrarySearch.Query? = null
+    private var listedMode = Mode.NAME
+    private var nameHits by mutableStateOf<List<LibrarySearch.Hit>>(emptyList())
+    private var storyHits by mutableStateOf<List<LibrarySearch.Hit>>(emptyList())
+    /** The query the hits above belong to; "no hits" is only shown once they're for the current one. */
+    private var hitsFor by mutableStateOf<LibrarySearch.Query?>(null)
 
     init {
         scope.launch {
@@ -188,8 +198,6 @@ class LibrarySearchScreen(initialQuery: String = "") : Screen() {
         val typingTag = field.text.takeIf { !it.endsWith(" ") }?.substringAfterLast(' ')?.takeIf { it.startsWith("#") }
 
         // Both modes are counted, so the chips can show where the hits are.
-        var nameHits by remember { mutableStateOf<List<LibrarySearch.Hit>>(emptyList()) }
-        var storyHits by remember { mutableStateOf<List<LibrarySearch.Hit>>(emptyList()) }
         LaunchedEffect(query, docs) {
             delay(80) // let fast typing settle
             val (n, s) = withContext(Dispatchers.Default) {
@@ -198,6 +206,15 @@ class LibrarySearchScreen(initialQuery: String = "") : Screen() {
             }
             nameHits = n
             storyHits = s
+            hitsFor = query
+        }
+        // A different search starts at the top; coming back to the same one keeps the position.
+        LaunchedEffect(query, mode) {
+            if (listedQuery != query || listedMode != mode) {
+                if (listedQuery != null) listState = LazyListState()
+                listedQuery = query
+                listedMode = mode
+            }
         }
         val hits = if (query.text.isBlank() || mode == Mode.NAME) nameHits else storyHits
         val otherHits = if (mode == Mode.NAME) storyHits else nameHits
@@ -297,6 +314,7 @@ class LibrarySearchScreen(initialQuery: String = "") : Screen() {
                             "Comic-Text zu suchen.\n\n#Hashtag findet Comics mit diesem Genre oder deinem eigenen Hashtag – " +
                             "auch verwandte: #fun findet „Comedy“.",
                     )
+                    hits.isEmpty() && hitsFor != query -> Unit // still searching (takes a moment)
                     hits.isEmpty() -> Column(
                         Modifier.fillMaxWidth().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -316,7 +334,7 @@ class LibrarySearchScreen(initialQuery: String = "") : Screen() {
                             }) { Text("„$words“ stattdessen in der Story suchen") }
                         }
                     }
-                    else -> LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                    else -> LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
                         items(hits, key = { it.doc.key }) { hit ->
                             val saved = byKey[hit.doc.key] ?: return@items
                             val source = installed.firstNotNullOfOrNull { ext -> ext.sources.firstOrNull { it.id == saved.sourceId } }

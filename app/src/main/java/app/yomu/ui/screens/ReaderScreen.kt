@@ -235,7 +235,9 @@ class ReaderScreen(
         if (item.chapterIndex != index) {
             // Crossing a chapter border: the previous chapter counts as read.
             if (item.chapterIndex > index) {
-                Yomu.library.saveProgress(source.id, manga.url, chapter.url, chapter.name, pages.lastIndex, true)
+                Yomu.library.saveProgress(
+                    source.id, manga.url, chapter.url, chapter.name, pages.lastIndex, true, manga.title, manga.thumbnail_url,
+                )
             }
             index = item.chapterIndex
             pages = chapterPages[index].orEmpty()
@@ -248,7 +250,9 @@ class ReaderScreen(
         current = page
         preload(page)
         val finished = page >= pages.lastIndex
-        Yomu.library.saveProgress(source.id, manga.url, chapter.url, chapter.name, page, finished)
+        Yomu.library.saveProgress(
+            source.id, manga.url, chapter.url, chapter.name, page, finished, manga.title, manga.thumbnail_url,
+        )
     }
 
     override fun onDispose() {

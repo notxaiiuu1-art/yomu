@@ -32,6 +32,9 @@ data class Progress(
     val lastPage: Int = 0,
     val lastReadAt: Long = 0,
     val read: Set<String> = emptySet(),
+    // So "Zuletzt gelesen" can show comics that aren't saved in the library.
+    val title: String? = null,
+    val thumbnail: String? = null,
 )
 
 @Serializable
@@ -107,7 +110,16 @@ class Library(context: Context) {
 
     fun progressOf(sourceId: Long, url: String): Progress = _progress.value[key(sourceId, url)] ?: Progress()
 
-    fun saveProgress(sourceId: Long, mangaUrl: String, chapterUrl: String, chapterName: String, page: Int, finished: Boolean) {
+    fun saveProgress(
+        sourceId: Long,
+        mangaUrl: String,
+        chapterUrl: String,
+        chapterName: String,
+        page: Int,
+        finished: Boolean,
+        title: String? = null,
+        thumbnail: String? = null,
+    ) {
         val k = key(sourceId, mangaUrl)
         _progress.update { map ->
             val old = map[k] ?: Progress()
@@ -118,6 +130,8 @@ class Library(context: Context) {
                     lastPage = page,
                     lastReadAt = System.currentTimeMillis(),
                     read = if (finished) old.read + chapterUrl else old.read,
+                    title = title?.takeIf { it.isNotBlank() } ?: old.title,
+                    thumbnail = thumbnail?.takeIf { it.isNotBlank() } ?: old.thumbnail,
                 )
                 )
         }

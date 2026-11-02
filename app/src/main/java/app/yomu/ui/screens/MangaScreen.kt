@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -77,7 +79,11 @@ import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
-class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
+/**
+ * @param resume open the reader at the last read chapter as soon as the chapters are loaded
+ *   (used by "Zuletzt gelesen").
+ */
+class MangaScreen(private val sourceId: Long, initial: SManga, resume: Boolean = false) : Screen() {
 
     private val source = Yomu.extensions.source(sourceId)
     private var manga by mutableStateOf(initial)
@@ -87,6 +93,9 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
     private var descriptionExpanded by mutableStateOf(false)
     private var detailsLoaded = false
     private var tagDialog by mutableStateOf(false)
+    private var pendingResume = resume
+    /** Lives with the screen, so coming back from the reader keeps the chapter list where it was. */
+    private val listState = LazyListState()
 
     init {
         refresh()
@@ -194,7 +203,18 @@ class MangaScreen(private val sourceId: Long, initial: SManga) : Screen() {
                 )
             },
         ) { padding ->
-            LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 32.dp)) {
+            LaunchedEffect(chapters) {
+                if (pendingResume && chapters.isNotEmpty()) {
+                    pendingResume = false
+                    val last = Yomu.library.progressOf(sourceId, manga.url).lastChapterUrl
+                    chapters.firstOrNull { it.url == last }?.let(::open)
+                }
+            }
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 32.dp),
+            ) {
                 item {
                     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         CoverImage(

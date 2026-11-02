@@ -12,7 +12,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -69,6 +69,8 @@ class SourceScreen(private val sourceId: Long) : Screen() {
     private var error by mutableStateOf<String?>(null)
     private var job: Job? = null
     private var showAddressDialog by mutableStateOf(false)
+    /** Lives with the screen, so coming back from a comic keeps the scroll position. */
+    private var gridState by mutableStateOf(LazyGridState())
 
     init {
         Yomu.prefs.lastUsedSource.set(sourceId)
@@ -79,6 +81,7 @@ class SourceScreen(private val sourceId: Long) : Screen() {
         job?.cancel()
         listing = newListing
         items.clear()
+        gridState = LazyGridState() // new list starts at the top
         page = 0
         hasNext = true
         error = null
@@ -186,8 +189,8 @@ class SourceScreen(private val sourceId: Long) : Screen() {
                     return@Column
                 }
 
-                val gridState = rememberLazyGridState()
-                val nearEnd by remember {
+                val gridState = gridState
+                val nearEnd by remember(gridState) {
                     derivedStateOf {
                         val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                         last >= gridState.layoutInfo.totalItemsCount - 6
