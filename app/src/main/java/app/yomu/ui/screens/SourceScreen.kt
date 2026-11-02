@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -42,6 +43,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.yomu.Yomu
+import app.yomu.core.SourceHashtags
+import eu.kanade.tachiyomi.source.model.FilterList
 import app.yomu.core.Domains
 import app.yomu.ui.ErrorBox
 import app.yomu.ui.LocalNavigator
@@ -69,6 +72,9 @@ class SourceScreen(private val sourceId: Long) : Screen() {
     private var error by mutableStateOf<String?>(null)
     private var job: Job? = null
     private var showAddressDialog by mutableStateOf(false)
+    /** The current search with its hashtags turned into the source's genre filters. */
+    private var search: SourceHashtags.Prepared? = null
+    private var searchNote by mutableStateOf<String?>(null)
     /** Lives with the screen, so coming back from a comic keeps the scroll position. */
     private var gridState by mutableStateOf(LazyGridState())
 
@@ -80,6 +86,12 @@ class SourceScreen(private val sourceId: Long) : Screen() {
     private fun reset(newListing: Listing) {
         job?.cancel()
         listing = newListing
+        search = if (newListing == Listing.SEARCH && source != null) {
+            SourceHashtags.prepare(query, runCatching { source.getFilterList() }.getOrElse { FilterList() })
+        } else {
+            null
+        }
+        searchNote = search?.note()
         items.clear()
         gridState = LazyGridState() // new list starts at the top
         page = 0
@@ -100,7 +112,10 @@ class SourceScreen(private val sourceId: Long) : Screen() {
                 val result = when (listing) {
                     Listing.POPULAR -> src.getPopularManga(next)
                     Listing.LATEST -> src.getLatestUpdates(next)
-                    Listing.SEARCH -> src.getSearchManga(next, query, src.getFilterList())
+                    Listing.SEARCH -> {
+                        val s = search ?: SourceHashtags.prepare(query, src.getFilterList()).also { search = it }
+                        src.getSearchManga(next, s.text, s.filters)
+                    }
                 }
                 val known = items.map { it.url }.toHashSet()
                 items.addAll(result.mangas.filter { known.add(it.url) })
@@ -154,13 +169,23 @@ class SourceScreen(private val sourceId: Long) : Screen() {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("In ${src.name} suchen …") },
+                    placeholder = { Text("In ${src.name} suchen … oder #Genre") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { if (query.isNotBlank()) reset(Listing.SEARCH) }),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 )
+                if (listing == Listing.SEARCH) {
+                    searchNote?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        )
+                    }
+                }
                 Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = listing == Listing.POPULAR,
