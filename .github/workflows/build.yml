@@ -61,4 +61,5 @@ jobs:
 
       - name: Show compiler errors
         if: failure()
-        run: grep -nE "^e: |error:|What went wrong|Could not|Unresolved" build.log | head -200 || true
+        run: |
+          grep -nE "^e: |error:|What went wrong|Could not|Unresolved" build.log | head -200 || true
